@@ -32,35 +32,73 @@ enum _WorkoutImageSource {
 class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
   static const Color _bg = Color(0xFF000000);
   static const Color _surface = Color(0xFF0B0B0D);
-  static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _softText = Color(0xFF66666D);
   static const Color _accent = Color(0xFF5DADEC);
   static const Color _danger = Color(0xFFE85D5D);
 
+  static const int _maxImageCount = 6;
+
   List<File> _pickedFiles = [];
   bool _isUploading = false;
+
+  ScrollPhysics _scrollPhysics(BuildContext context) {
+    final platform = Theme.of(context).platform;
+
+    if (platform == TargetPlatform.iOS) {
+      return const BouncingScrollPhysics();
+    }
+
+    return const ClampingScrollPhysics();
+  }
+
+  void _addPickedFiles(List<File> files) {
+    if (files.isEmpty) return;
+
+    final remainingCount = _maxImageCount - _pickedFiles.length;
+
+    if (remainingCount <= 0) {
+      showAppSnackBar(
+        context,
+        message: '사진은 최대 $_maxImageCount장까지 추가할 수 있습니다.',
+        icon: Icons.info_outline_rounded,
+        isError: true,
+      );
+      return;
+    }
+
+    final existingPaths = _pickedFiles.map((file) => file.path).toSet();
+
+    final uniqueFiles = files
+        .where((file) => !existingPaths.contains(file.path))
+        .take(remainingCount)
+        .toList();
+
+    if (uniqueFiles.isEmpty) return;
+
+    setState(() {
+      _pickedFiles = [
+        ..._pickedFiles,
+        ...uniqueFiles,
+      ];
+    });
+
+    showAppSnackBar(
+      context,
+      message: '${uniqueFiles.length}장의 사진이 선택되었습니다.',
+      icon: Icons.check_circle_rounded,
+    );
+  }
 
   Future<void> _pickImagesFromGallery() async {
     try {
       final pickedFiles =
           await ref.read(imagePickerServiceProvider).pickMultipleImages();
 
-      if (pickedFiles.isEmpty) return;
+      if (!mounted || pickedFiles.isEmpty) return;
 
-      if (!mounted) return;
-
-      setState(() {
-        _pickedFiles = [..._pickedFiles, ...pickedFiles];
-      });
-
-      showAppSnackBar(
-        context,
-        message: '사진이 선택되었습니다.',
-        icon: Icons.check_circle_rounded,
-      );
+      _addPickedFiles(pickedFiles);
     } catch (e) {
       if (!mounted) return;
 
@@ -78,19 +116,9 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
       final pickedFile =
           await ref.read(imagePickerServiceProvider).pickImageFromCamera();
 
-      if (pickedFile == null) return;
+      if (!mounted || pickedFile == null) return;
 
-      if (!mounted) return;
-
-      setState(() {
-        _pickedFiles = [..._pickedFiles, pickedFile];
-      });
-
-      showAppSnackBar(
-        context,
-        message: '사진이 선택되었습니다.',
-        icon: Icons.check_circle_rounded,
-      );
+      _addPickedFiles([pickedFile]);
     } catch (e) {
       if (!mounted) return;
 
@@ -105,7 +133,8 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
 
   void _removePickedFile(File file) {
     setState(() {
-      _pickedFiles.remove(file);
+      _pickedFiles =
+          _pickedFiles.where((picked) => picked.path != file.path).toList();
     });
   }
 
@@ -114,14 +143,14 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
     required int index,
   }) {
     final now = DateTime.now().millisecondsSinceEpoch;
-    return 'workouts/$uid/$now-$index';
+    return 'workouts/$uid/$now-$index.jpg';
   }
 
   Future<List<String>> _uploadSelectedImages(String uid) async {
     if (_pickedFiles.isEmpty) return [];
 
     final imageUploadService = ref.read(imageUploadServiceProvider);
-    final List<String> imageUrls = [];
+    final imageUrls = <String>[];
 
     for (int i = 0; i < _pickedFiles.length; i++) {
       final imageUrl = await imageUploadService.uploadImageFile(
@@ -146,7 +175,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
       isDismissible: true,
       enableDrag: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.68),
+      barrierColor: Colors.black.withAlpha(173),
       builder: (sheetContext) {
         final media = MediaQuery.of(sheetContext);
 
@@ -167,8 +196,9 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
                 bottom: BorderSide(color: _line, width: 0.8),
               ),
             ),
+            clipBehavior: Clip.antiAlias,
             child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
+              physics: _scrollPhysics(sheetContext),
               padding: EdgeInsets.fromLTRB(
                 18,
                 10,
@@ -199,12 +229,13 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
                     ),
                   ),
                   const SizedBox(height: 6),
-                  const Text(
-                    '운동 기록에 추가할 사진을 선택해주세요.',
+                  Text(
+                    '운동 기록에 추가할 사진을 선택해주세요.\n최대 $_maxImageCount장까지 추가할 수 있어요.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: _secondaryText,
                       fontSize: 13,
+                      height: 1.4,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
@@ -265,12 +296,12 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
 
   Widget _buildImagePreviewSection() {
     if (_pickedFiles.isEmpty) {
-      return _SectionFrame(
-        padding: const EdgeInsets.symmetric(
+      return const _SectionFrame(
+        padding: EdgeInsets.symmetric(
           vertical: 28,
           horizontal: 18,
         ),
-        child: const Column(
+        child: Column(
           children: [
             Icon(
               Icons.photo_library_outlined,
@@ -321,7 +352,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
                 ),
               ),
               Text(
-                '${_pickedFiles.length}장',
+                '${_pickedFiles.length}/$_maxImageCount장',
                 style: const TextStyle(
                   color: _secondaryText,
                   fontSize: 13,
@@ -354,6 +385,18 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
                             child: Image.file(
                               file,
                               fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const ColoredBox(
+                                  color: Color(0xFF121216),
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.broken_image_outlined,
+                                      color: _secondaryText,
+                                      size: 26,
+                                    ),
+                                  ),
+                                );
+                              },
                             ),
                           ),
                         ),
@@ -361,12 +404,14 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
                           top: 5,
                           right: 5,
                           child: GestureDetector(
-                            onTap: () => _removePickedFile(file),
+                            onTap: _isUploading
+                                ? null
+                                : () => _removePickedFile(file),
                             child: Container(
                               width: 25,
                               height: 25,
                               decoration: BoxDecoration(
-                                color: Colors.black.withOpacity(0.72),
+                                color: Colors.black.withAlpha(184),
                                 shape: BoxShape.circle,
                               ),
                               child: const Icon(
@@ -390,6 +435,8 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
   }
 
   Future<void> _submitWorkoutFinish() async {
+    if (_isUploading) return;
+
     final auth = ref.read(firebaseAuthProvider);
     final user = auth.currentUser;
     final finish = widget.finish;
@@ -430,7 +477,9 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
         _pickedFiles.clear();
       });
 
-      ref.read(workoutProvider.notifier).idle();
+      await ref.read(workoutProvider.notifier).idle();
+
+      if (!mounted) return;
       context.go('/home');
     } catch (e) {
       if (!mounted) return;
@@ -448,9 +497,13 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
   }
 
   Future<void> _deleteWorkoutFinish() async {
+    if (_isUploading) return;
+
     final confirm = await _showDeleteDialog(context);
 
     if (!confirm) return;
+
+    if (!mounted) return;
 
     setState(() => _isUploading = true);
 
@@ -465,7 +518,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
         icon: Icons.check_circle_rounded,
       );
 
-      ref.read(workoutProvider.notifier).idle();
+      await ref.read(workoutProvider.notifier).idle();
 
       if (!mounted) return;
       context.go('/home');
@@ -488,6 +541,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
     return await showDialog<bool>(
           context: context,
           barrierDismissible: true,
+          barrierColor: Colors.black.withAlpha(180),
           builder: (dialogContext) {
             final media = MediaQuery.of(dialogContext);
             final maxWidth = math.min(media.size.width - 32, 380.0);
@@ -504,7 +558,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
                   maxHeight: media.size.height * 0.86,
                 ),
                 child: SingleChildScrollView(
-                  physics: const BouncingScrollPhysics(),
+                  physics: _scrollPhysics(dialogContext),
                   child: Container(
                     padding: const EdgeInsets.fromLTRB(20, 20, 20, 18),
                     decoration: BoxDecoration(
@@ -522,7 +576,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
                           width: 54,
                           height: 54,
                           decoration: BoxDecoration(
-                            color: _danger.withOpacity(0.14),
+                            color: _danger.withAlpha(36),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(
@@ -648,16 +702,19 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
       return '--:-- min/km';
     }
 
-    final minutes = pace.floor();
-    final seconds = ((pace - minutes) * 60).round();
+    final totalSeconds = (pace * 60).round();
+    final minutes = totalSeconds ~/ 60;
+    final seconds = totalSeconds % 60;
 
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')} min/km';
   }
 
   String _formatTime(int seconds) {
-    final hours = seconds ~/ 3600;
-    final minutes = (seconds % 3600) ~/ 60;
-    final remainSeconds = seconds % 60;
+    final safeSeconds = seconds < 0 ? 0 : seconds;
+
+    final hours = safeSeconds ~/ 3600;
+    final minutes = (safeSeconds % 3600) ~/ 60;
+    final remainSeconds = safeSeconds % 60;
 
     if (hours > 0) {
       return '$hours시간 $minutes분 $remainSeconds초';
@@ -666,13 +723,30 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
     return '$minutes분 $remainSeconds초';
   }
 
+  double _safeDistanceKm(double distanceMeters) {
+    if (distanceMeters.isNaN || distanceMeters.isInfinite || distanceMeters < 0) {
+      return 0.0;
+    }
+
+    return distanceMeters / 1000;
+  }
+
+  double _safeSpeedKmh(double speedKmh) {
+    if (speedKmh.isNaN || speedKmh.isInfinite || speedKmh < 0) {
+      return 0.0;
+    }
+
+    return speedKmh;
+  }
+
   @override
   Widget build(BuildContext context) {
     final finish = widget.finish;
 
-    final km = finish.distanceMeters / 1000;
+    final km = _safeDistanceKm(finish.distanceMeters);
     final timeText = _formatTime(finish.seconds);
     final paceText = _formatPace(finish.paceMinPerKm);
+    final speedKmh = _safeSpeedKmh(finish.speedKmh);
     final media = MediaQuery.of(context);
 
     return Scaffold(
@@ -680,7 +754,10 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
       appBar: AppBar(
         backgroundColor: _bg,
         surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
+        automaticallyImplyLeading: false,
         centerTitle: true,
         toolbarHeight: 52,
         title: const Text(
@@ -707,7 +784,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
         top: false,
         bottom: false,
         child: SingleChildScrollView(
-          physics: const BouncingScrollPhysics(),
+          physics: _scrollPhysics(context),
           padding: EdgeInsets.fromLTRB(
             16,
             18,
@@ -725,6 +802,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
               _PhotoAddButton(
                 isUploading: _isUploading,
                 pickedCount: _pickedFiles.length,
+                maxCount: _maxImageCount,
                 onTap: () => _showUploadSheet(context),
               ),
               const SizedBox(height: 14),
@@ -762,7 +840,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
                     _RecordRow(
                       icon: Icons.speed_outlined,
                       label: '평균 속도',
-                      value: '${finish.speedKmh.toStringAsFixed(2)} km/h',
+                      value: '${speedKmh.toStringAsFixed(2)} km/h',
                     ),
                     const SizedBox(height: 14),
                     _RecordRow(
@@ -800,8 +878,6 @@ class _FinishHero extends StatelessWidget {
     required this.timeText,
   });
 
-  static const Color _surface = Color(0xFF0B0B0D);
-  static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
   static const Color _accent = Color(0xFF5DADEC);
@@ -816,10 +892,10 @@ class _FinishHero extends StatelessWidget {
             width: 76,
             height: 76,
             decoration: BoxDecoration(
-              color: _accent.withOpacity(0.13),
+              color: _accent.withAlpha(33),
               shape: BoxShape.circle,
               border: Border.all(
-                color: _accent.withOpacity(0.20),
+                color: _accent.withAlpha(51),
                 width: 0.8,
               ),
             ),
@@ -844,7 +920,7 @@ class _FinishHero extends StatelessWidget {
           Text(
             '${km.toStringAsFixed(2)} km · $timeText',
             textAlign: TextAlign.center,
-            maxLines: 1,
+            maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
               color: _secondaryText,
@@ -862,11 +938,13 @@ class _FinishHero extends StatelessWidget {
 class _PhotoAddButton extends StatelessWidget {
   final bool isUploading;
   final int pickedCount;
+  final int maxCount;
   final VoidCallback onTap;
 
   const _PhotoAddButton({
     required this.isUploading,
     required this.pickedCount,
+    required this.maxCount,
     required this.onTap,
   });
 
@@ -878,10 +956,12 @@ class _PhotoAddButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isMax = pickedCount >= maxCount;
+
     return SizedBox(
       height: 48,
       child: OutlinedButton(
-        onPressed: isUploading ? null : onTap,
+        onPressed: isUploading || isMax ? null : onTap,
         style: OutlinedButton.styleFrom(
           backgroundColor: _surface,
           foregroundColor: _primaryText,
@@ -906,7 +986,11 @@ class _PhotoAddButton extends StatelessWidget {
             const SizedBox(width: 8),
             Flexible(
               child: Text(
-                pickedCount > 0 ? '사진 추가 · ${pickedCount}장 선택됨' : '사진 추가',
+                isMax
+                    ? '사진 최대 $maxCount장 선택됨'
+                    : pickedCount > 0
+                        ? '사진 추가 · $pickedCount장 선택됨'
+                        : '사진 추가',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -943,7 +1027,7 @@ class _SubmitButton extends StatelessWidget {
         onPressed: isUploading ? null : onTap,
         style: ElevatedButton.styleFrom(
           backgroundColor: _accent,
-          disabledBackgroundColor: _accent.withOpacity(0.35),
+          disabledBackgroundColor: _accent.withAlpha(89),
           foregroundColor: Colors.white,
           elevation: 0,
           shape: RoundedRectangleBorder(
@@ -994,7 +1078,7 @@ class _DeleteButton extends StatelessWidget {
         style: OutlinedButton.styleFrom(
           foregroundColor: _danger,
           side: BorderSide(
-            color: _danger.withOpacity(0.75),
+            color: _danger.withAlpha(191),
             width: 0.8,
           ),
           shape: RoundedRectangleBorder(
@@ -1039,7 +1123,7 @@ class _RecordRow extends StatelessWidget {
           width: 38,
           height: 38,
           decoration: BoxDecoration(
-            color: _accent.withOpacity(0.13),
+            color: _accent.withAlpha(33),
             shape: BoxShape.circle,
           ),
           child: Icon(
@@ -1141,62 +1225,65 @@ class _SheetActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
-      borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
-        decoration: BoxDecoration(
-          color: _surfaceSoft,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: _line,
-            width: 0.8,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+          decoration: BoxDecoration(
+            color: _surfaceSoft,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: _line,
+              width: 0.8,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: _primaryText,
-              size: 23,
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _primaryText,
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _secondaryText,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                color: _primaryText,
+                size: 23,
               ),
-            ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: _secondaryText,
-              size: 22,
-            ),
-          ],
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _primaryText,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _secondaryText,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: _secondaryText,
+                size: 22,
+              ),
+            ],
+          ),
         ),
       ),
     );

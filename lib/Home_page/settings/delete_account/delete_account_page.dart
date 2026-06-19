@@ -26,11 +26,33 @@ class _DeleteAccountPageState extends ConsumerState<DeleteAccountPage> {
   static const Color _secondaryText = Color(0xFF9B9BA1);
   static const Color _softText = Color(0xFF66666D);
   static const Color _danger = Color(0xFFE85D5D);
-  static const Color _dangerSoft = Color(0xFF2A1012);
-  static const Color _accent = Color(0xFF5DADEC);
 
   bool get _canDelete {
     return _isChecked && _confirmController.text.trim() == '회원탈퇴';
+  }
+
+  bool _isCupertinoPlatform(BuildContext context) {
+    final platform = Theme.of(context).platform;
+
+    return platform == TargetPlatform.iOS || platform == TargetPlatform.macOS;
+  }
+
+  IconData _backIcon(BuildContext context) {
+    return _isCupertinoPlatform(context)
+        ? Icons.arrow_back_ios_new_rounded
+        : Icons.arrow_back_rounded;
+  }
+
+  double _backIconSize(BuildContext context) {
+    return _isCupertinoPlatform(context) ? 20 : 22;
+  }
+
+  ScrollPhysics _scrollPhysics(BuildContext context) {
+    return _isCupertinoPlatform(context)
+        ? const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          )
+        : const ClampingScrollPhysics();
   }
 
   @override
@@ -42,26 +64,29 @@ class _DeleteAccountPageState extends ConsumerState<DeleteAccountPage> {
   Future<void> _handleDeleteAccount() async {
     if (!_canDelete || _isLoading) return;
 
+    FocusScope.of(context).unfocus();
+
     setState(() {
       _isLoading = true;
     });
 
+    Object? deleteError;
+
     try {
+      ref.invalidate(deleteAccountProvider);
       await ref.read(deleteAccountProvider.future);
-
-      if (!mounted) return;
-
-      showAppSnackBar(
-        context,
-        message: '회원탈퇴가 완료되었습니다.',
-        icon: Icons.check_circle_rounded,
-      );
-
-      context.go('/login');
     } catch (e) {
-      if (!mounted) return;
+      deleteError = e;
+    }
 
-      final message = _parseDeleteAccountError(e);
+    if (!mounted) return;
+
+    setState(() {
+      _isLoading = false;
+    });
+
+    if (deleteError != null) {
+      final message = _parseDeleteAccountError(deleteError);
 
       showAppSnackBar(
         context,
@@ -69,17 +94,22 @@ class _DeleteAccountPageState extends ConsumerState<DeleteAccountPage> {
         icon: Icons.error_rounded,
         isError: true,
       );
-    } finally {
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-        });
-      }
+      return;
     }
+
+    try {
+      context.go('/login');
+    } catch (_) {}
   }
 
   String _parseDeleteAccountError(Object error) {
     final raw = error.toString();
+
+    if (raw.contains('unauthenticated') ||
+        raw.contains('로그인이 필요') ||
+        raw.contains('no-current-user')) {
+      return '로그인이 필요합니다. 다시 로그인한 뒤 회원탈퇴를 진행해주세요.';
+    }
 
     if (raw.contains('requires-recent-login') ||
         raw.contains('다시 로그인') ||
@@ -88,14 +118,24 @@ class _DeleteAccountPageState extends ConsumerState<DeleteAccountPage> {
     }
 
     if (raw.contains('permission-denied')) {
-      return '회원탈퇴 권한이 없습니다. Firestore Rules를 확인해주세요.';
+      return '탈퇴 요청을 처리할 수 없습니다. 잠시 후 다시 시도해주세요.';
     }
 
-    if (raw.contains('network')) {
-      return '네트워크 연결을 확인한 뒤 다시 시도해주세요.';
+    if (raw.contains('deadline-exceeded') ||
+        raw.contains('timeout') ||
+        raw.contains('시간')) {
+      return '탈퇴 처리 시간이 길어지고 있습니다. 잠시 후 다시 시도해주세요.';
     }
 
-    return '회원탈퇴에 실패했습니다. 다시 시도해주세요.';
+    if (raw.contains('network') || raw.contains('unavailable')) {
+      return '인터넷 연결을 확인한 뒤 다시 시도해주세요.';
+    }
+
+    if (raw.contains('internal')) {
+      return '탈퇴 처리 중 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
+    }
+
+    return '회원탈퇴에 실패했습니다. 잠시 후 다시 시도해주세요.';
   }
 
   void _showDeleteConfirmDialog() {
@@ -104,8 +144,14 @@ class _DeleteAccountPageState extends ConsumerState<DeleteAccountPage> {
     showDialog<void>(
       context: context,
       barrierDismissible: !_isLoading,
+      useSafeArea: true,
       builder: (dialogContext) {
         return AlertDialog(
+          scrollable: true,
+          insetPadding: const EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 24,
+          ),
           backgroundColor: _surface,
           surfaceTintColor: Colors.transparent,
           shape: RoundedRectangleBorder(
@@ -118,6 +164,7 @@ class _DeleteAccountPageState extends ConsumerState<DeleteAccountPage> {
           titlePadding: const EdgeInsets.fromLTRB(22, 22, 22, 0),
           contentPadding: const EdgeInsets.fromLTRB(22, 12, 22, 4),
           actionsPadding: const EdgeInsets.fromLTRB(16, 10, 16, 16),
+          actionsAlignment: MainAxisAlignment.end,
           title: const Text(
             '정말 탈퇴하시겠어요?',
             style: TextStyle(
@@ -128,7 +175,8 @@ class _DeleteAccountPageState extends ConsumerState<DeleteAccountPage> {
             ),
           ),
           content: const Text(
-            '회원탈퇴 후 계정 정보와 일부 데이터는 복구할 수 없습니다.\n계속 진행하시겠습니까?',
+            '탈퇴하면 계정, 프로필, 운동 기록, 피드, 사진, 팔로우 관계, 좋아요 기록이 삭제됩니다.\n\n'
+            '삭제된 정보는 복구할 수 없습니다.',
             style: TextStyle(
               color: _secondaryText,
               fontSize: 14,
@@ -162,6 +210,7 @@ class _DeleteAccountPageState extends ConsumerState<DeleteAccountPage> {
                 backgroundColor: _danger,
                 foregroundColor: Colors.white,
                 elevation: 0,
+                minimumSize: const Size(82, 42),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -189,200 +238,228 @@ class _DeleteAccountPageState extends ConsumerState<DeleteAccountPage> {
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
-
-    return Scaffold(
-      backgroundColor: _bg,
-      appBar: AppBar(
+    return PopScope(
+      canPop: !_isLoading,
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
         backgroundColor: _bg,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        toolbarHeight: 52,
-        leading: IconButton(
-          visualDensity: VisualDensity.compact,
-          onPressed: _isLoading ? null : () => context.pop(),
-          icon: Icon(
-            Icons.arrow_back_ios_new_rounded,
-            color: _isLoading ? _softText : _primaryText,
-            size: 20,
+        appBar: AppBar(
+          backgroundColor: _bg,
+          surfaceTintColor: Colors.transparent,
+          elevation: 0,
+          scrolledUnderElevation: 0,
+          centerTitle: true,
+          toolbarHeight: 52,
+          leadingWidth: 56,
+          leading: IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: _isLoading ? null : () => context.pop(),
+            icon: Icon(
+              _backIcon(context),
+              color: _isLoading ? _softText : _primaryText,
+              size: _backIconSize(context),
+            ),
+          ),
+          title: const Text(
+            '회원탈퇴',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: _primaryText,
+              fontSize: 18,
+              fontWeight: FontWeight.w900,
+              letterSpacing: -0.35,
+            ),
+          ),
+          bottom: const PreferredSize(
+            preferredSize: Size.fromHeight(0.7),
+            child: Divider(
+              color: _line,
+              height: 0.7,
+              thickness: 0.7,
+            ),
           ),
         ),
-        title: const Text(
-          '회원탈퇴',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: TextStyle(
-            color: _primaryText,
-            fontSize: 18,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.35,
-          ),
-        ),
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(0.7),
-          child: Divider(
-            color: _line,
-            height: 0.7,
-            thickness: 0.7,
-          ),
-        ),
-      ),
-      body: SafeArea(
-        top: false,
-        bottom: false,
-        child: ListView(
-          physics: const BouncingScrollPhysics(),
-          padding: EdgeInsets.fromLTRB(
-            16,
-            16,
-            16,
-            24 + media.padding.bottom,
-          ),
-          children: [
-            const _WarningHeader(),
-            const SizedBox(height: 14),
-            const _InfoCard(
-              title: '탈퇴 전에 확인해주세요',
-              items: [
-                '회원탈퇴 후 계정 정보는 복구할 수 없습니다.',
-                '프로필 정보와 닉네임 선점 정보가 삭제됩니다.',
-                '탈퇴 후 같은 계정으로 다시 로그인할 수 없습니다.',
-                '운동 기록, 피드, 좋아요 등은 정책에 따라 삭제 또는 비식별 처리될 수 있습니다.',
-              ],
-            ),
-            const SizedBox(height: 12),
-            const _InfoCard(
-              title: '현재 삭제 처리되는 정보',
-              items: [
-                'Firebase Auth 계정',
-                'users/{uid} 사용자 문서',
-                'displayNames/{displayNameKey} 닉네임 문서',
-              ],
-            ),
-            const SizedBox(height: 18),
-            _CheckBoxCard(
-              isChecked: _isChecked,
-              isLoading: _isLoading,
-              onChanged: (value) {
-                setState(() {
-                  _isChecked = value ?? false;
-                });
-              },
-              onTap: _toggleCheck,
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              '아래 입력창에 회원탈퇴 를 입력해주세요.',
-              style: TextStyle(
-                color: _primaryText,
-                fontSize: 14,
-                fontWeight: FontWeight.w800,
-                letterSpacing: -0.2,
-              ),
-            ),
-            const SizedBox(height: 9),
-            TextField(
-              controller: _confirmController,
-              enabled: !_isLoading,
-              cursorColor: _danger,
-              style: const TextStyle(
-                color: _primaryText,
-                fontSize: 15,
-                fontWeight: FontWeight.w700,
-              ),
-              onChanged: (_) => setState(() {}),
-              decoration: InputDecoration(
-                hintText: '회원탈퇴',
-                hintStyle: const TextStyle(
-                  color: _softText,
-                  fontWeight: FontWeight.w600,
+        body: SafeArea(
+          top: false,
+          bottom: true,
+          child: Stack(
+            children: [
+              ListView(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
+                physics: _scrollPhysics(context),
+                padding: const EdgeInsets.fromLTRB(
+                  16,
+                  16,
+                  16,
+                  24,
                 ),
-                filled: true,
-                fillColor: _surface,
-                contentPadding: const EdgeInsets.symmetric(
-                  horizontal: 15,
-                  vertical: 15,
-                ),
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: const BorderSide(
-                    color: _line,
-                    width: 0.8,
+                children: [
+                  const _WarningHeader(),
+                  const SizedBox(height: 14),
+                  const _InfoCard(
+                    title: '탈퇴 전에 확인해주세요',
+                    items: [
+                      '회원탈퇴 후 계정과 이용 기록은 복구할 수 없습니다.',
+                      '같은 이메일로 다시 가입하더라도 기존 기록은 이어지지 않을 수 있습니다.',
+                      '사진과 운동 기록 등 관련 정보 정리에 시간이 걸릴 수 있습니다.',
+                      '처리 중 인터넷 연결이 끊기면 탈퇴가 완료되지 않을 수 있습니다.',
+                    ],
                   ),
-                ),
-                enabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: const BorderSide(
-                    color: _line,
-                    width: 0.8,
+                  const SizedBox(height: 12),
+                  const _InfoCard(
+                    title: '삭제 처리되는 정보',
+                    items: [
+                      '로그인 계정 및 기본 회원 정보',
+                      '닉네임, 자기소개, 프로필 사진 등 프로필 정보',
+                      '내가 올린 운동 기록과 운동 피드',
+                      '운동 피드에 첨부한 사진',
+                      '팔로워와 팔로잉 관계',
+                      '내가 누른 좋아요 기록',
+                      '랭킹에 반영된 내 운동 기록',
+                    ],
                   ),
-                ),
-                focusedBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: const BorderSide(
-                    color: _danger,
-                    width: 1.1,
+                  const SizedBox(height: 12),
+                  const _DangerNoticeCard(),
+                  const SizedBox(height: 18),
+                  _CheckBoxCard(
+                    isChecked: _isChecked,
+                    isLoading: _isLoading,
+                    onChanged: (value) {
+                      setState(() {
+                        _isChecked = value ?? false;
+                      });
+                    },
+                    onTap: _toggleCheck,
                   ),
-                ),
-                disabledBorder: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(15),
-                  borderSide: const BorderSide(
-                    color: _line,
-                    width: 0.8,
+                  const SizedBox(height: 16),
+                  const Text(
+                    "아래 입력창에 '회원탈퇴'를 입력해주세요.",
+                    style: TextStyle(
+                      color: _primaryText,
+                      fontSize: 14,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.2,
+                    ),
                   ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 22),
-            SizedBox(
-              height: 52,
-              child: ElevatedButton(
-                onPressed: _canDelete && !_isLoading
-                    ? _showDeleteConfirmDialog
-                    : null,
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _danger,
-                  foregroundColor: Colors.white,
-                  disabledBackgroundColor: _surfaceSoft,
-                  disabledForegroundColor: _softText,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(15),
-                  ),
-                ),
-                child: _isLoading
-                    ? const SizedBox(
-                        width: 22,
-                        height: 22,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.3,
-                          color: Colors.white,
-                        ),
-                      )
-                    : const Text(
-                        '회원탈퇴',
-                        style: TextStyle(
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: -0.2,
+                  const SizedBox(height: 9),
+                  TextField(
+                    controller: _confirmController,
+                    enabled: !_isLoading,
+                    cursorColor: _danger,
+                    textInputAction: TextInputAction.done,
+                    style: const TextStyle(
+                      color: _primaryText,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w700,
+                    ),
+                    onSubmitted: (_) {
+                      FocusScope.of(context).unfocus();
+                    },
+                    onChanged: (_) => setState(() {}),
+                    decoration: InputDecoration(
+                      hintText: '회원탈퇴',
+                      hintStyle: const TextStyle(
+                        color: _softText,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      filled: true,
+                      fillColor: _surface,
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 15,
+                        vertical: 15,
+                      ),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: const BorderSide(
+                          color: _line,
+                          width: 0.8,
                         ),
                       ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: const BorderSide(
+                          color: _line,
+                          width: 0.8,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: const BorderSide(
+                          color: _danger,
+                          width: 1.1,
+                        ),
+                      ),
+                      disabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(15),
+                        borderSide: const BorderSide(
+                          color: _line,
+                          width: 0.8,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 22),
+                  SizedBox(
+                    height: 52,
+                    child: ElevatedButton(
+                      onPressed: _canDelete && !_isLoading
+                          ? _showDeleteConfirmDialog
+                          : null,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _danger,
+                        foregroundColor: Colors.white,
+                        disabledBackgroundColor: _surfaceSoft,
+                        disabledForegroundColor: _softText,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(15),
+                        ),
+                      ),
+                      child: _isLoading
+                          ? const SizedBox(
+                              width: 22,
+                              height: 22,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.3,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              '회원탈퇴',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w900,
+                                letterSpacing: -0.2,
+                              ),
+                            ),
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  TextButton(
+                    onPressed: _isLoading ? null : () => context.pop(),
+                    child: Text(
+                      '취소하고 돌아가기',
+                      style: TextStyle(
+                        color: _isLoading ? _softText : _secondaryText,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                  ),
+                ],
               ),
-            ),
-            const SizedBox(height: 10),
-            TextButton(
-              onPressed: _isLoading ? null : () => context.pop(),
-              child: Text(
-                '취소하고 돌아가기',
-                style: TextStyle(
-                  color: _isLoading ? _softText : _secondaryText,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w800,
+              if (_isLoading)
+                Positioned.fill(
+                  child: AbsorbPointer(
+                    child: Container(
+                      color: Colors.black.withValues(alpha: 0.18),
+                    ),
+                  ),
                 ),
-              ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );
@@ -536,6 +613,54 @@ class _InfoCard extends StatelessWidget {
   }
 }
 
+class _DangerNoticeCard extends StatelessWidget {
+  const _DangerNoticeCard();
+
+  static const Color _surface = Color(0xFF160B0C);
+  static const Color _line = Color(0xFF3A171A);
+  static const Color _secondaryText = Color(0xFFD7A6A6);
+  static const Color _danger = Color(0xFFE85D5D);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(16, 15, 16, 15),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: _line,
+          width: 0.8,
+        ),
+      ),
+      child: const Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(
+            Icons.error_outline_rounded,
+            color: _danger,
+            size: 21,
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              '탈퇴가 시작되면 관련 정보가 순차적으로 정리됩니다. 완료될 때까지 화면을 닫지 않는 것을 권장합니다.',
+              style: TextStyle(
+                color: _secondaryText,
+                fontSize: 13.3,
+                height: 1.42,
+                fontWeight: FontWeight.w700,
+                letterSpacing: -0.1,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _CheckBoxCard extends StatelessWidget {
   final bool isChecked;
   final bool isLoading;
@@ -568,7 +693,7 @@ class _CheckBoxCard extends StatelessWidget {
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: isChecked ? _danger.withOpacity(0.65) : _line,
+              color: isChecked ? _danger.withValues(alpha: 0.65) : _line,
               width: 0.8,
             ),
           ),
@@ -585,14 +710,14 @@ class _CheckBoxCard extends StatelessWidget {
                   width: 1.2,
                 ),
                 visualDensity: VisualDensity.compact,
-                materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                materialTapTargetSize: MaterialTapTargetSize.padded,
               ),
               const SizedBox(width: 6),
               const Expanded(
                 child: Padding(
                   padding: EdgeInsets.only(top: 1),
                   child: Text(
-                    '위 내용을 모두 확인했으며, 회원탈퇴 시 계정 복구가 불가능하다는 것을 이해했습니다.',
+                    '위 내용을 모두 확인했으며, 탈퇴 후 계정과 이용 기록을 복구할 수 없다는 점에 동의합니다.',
                     style: TextStyle(
                       color: _primaryText,
                       fontSize: 13.8,

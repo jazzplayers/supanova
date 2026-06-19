@@ -12,6 +12,9 @@ void showAppSnackBar(
   final Color backgroundColor =
       isError ? const Color(0xFF4A1E24) : const Color(0xFF12333A);
 
+  final media = MediaQuery.maybeOf(context);
+  final bottomSafeArea = media?.padding.bottom ?? 0;
+
   ScaffoldMessenger.of(context)
     ..hideCurrentSnackBar()
     ..showSnackBar(
@@ -19,25 +22,34 @@ void showAppSnackBar(
         behavior: SnackBarBehavior.floating,
         elevation: 0,
         backgroundColor: Colors.transparent,
-        margin: const EdgeInsets.fromLTRB(16, 0, 16, 22),
+        margin: EdgeInsets.fromLTRB(
+          16,
+          0,
+          16,
+          18 + bottomSafeArea,
+        ),
+        padding: EdgeInsets.zero,
         duration: const Duration(seconds: 2),
         content: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 14),
+          padding: const EdgeInsets.symmetric(
+            horizontal: 15,
+            vertical: 14,
+          ),
           decoration: BoxDecoration(
             color: backgroundColor,
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
-              color: accentColor.withValues(alpha: 0.65),
+              color: accentColor.withAlpha(166),
               width: 1.2,
             ),
             boxShadow: [
               BoxShadow(
-                color: accentColor.withValues(alpha: 0.18),
+                color: accentColor.withAlpha(46),
                 blurRadius: 18,
                 offset: const Offset(0, 6),
               ),
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.45),
+                color: Colors.black.withAlpha(115),
                 blurRadius: 24,
                 offset: const Offset(0, 12),
               ),
@@ -49,10 +61,10 @@ void showAppSnackBar(
                 width: 36,
                 height: 36,
                 decoration: BoxDecoration(
-                  color: accentColor.withValues(alpha: 0.18),
+                  color: accentColor.withAlpha(46),
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: accentColor.withValues(alpha: 0.45),
+                    color: accentColor.withAlpha(115),
                   ),
                 ),
                 child: Icon(

@@ -1,4 +1,6 @@
 import 'dart:io';
+
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:image_picker/image_picker.dart';
 
 abstract class ImagePickerService {
@@ -10,59 +12,120 @@ abstract class ImagePickerService {
 class ImagePickerServiceImpl implements ImagePickerService {
   final ImagePicker _picker = ImagePicker();
 
-///pickSingleImageFromGallery()는 갤러리에서 단일 이미지를 선택하는 기능을 제공하는 메서드입니다.
+  /// ======================
+  /// 이미지 압축 공통 메서드
+  /// ======================
+  Future<File> _compressImage(
+    File originalFile, {
+    required int maxWidth,
+    required int maxHeight,
+    int quality = 70,
+  }) async {
+    try {
+      final targetPath =
+          '${Directory.systemTemp.path}/supanova_${DateTime.now().microsecondsSinceEpoch}.jpg';
 
-///---------------------
-///프로필 사진 등록할 떄 사용
-///---------------------
+      final compressedXFile = await FlutterImageCompress.compressAndGetFile(
+        originalFile.absolute.path,
+        targetPath,
+        minWidth: maxWidth,
+        minHeight: maxHeight,
+        quality: quality,
+        format: CompressFormat.jpeg,
+        keepExif: false,
+      );
+
+      if (compressedXFile == null) {
+        return originalFile;
+      }
+
+      final compressedFile = File(compressedXFile.path);
+
+      final originalSize = await originalFile.length();
+      final compressedSize = await compressedFile.length();
+
+      /// 압축했는데 오히려 용량이 커지면 원본 사용
+      if (compressedSize >= originalSize) {
+        return originalFile;
+      }
+
+      return compressedFile;
+    } catch (_) {
+      /// 압축 실패해도 앱이 죽지 않게 원본 반환
+      return originalFile;
+    }
+  }
+
+  /// pickSingleImageFromGallery()는 갤러리에서 단일 이미지를 선택하는 기능을 제공하는 메서드입니다.
+  ///
+  /// ---------------------
+  /// 프로필 사진 등록할 때 사용
+  /// ---------------------
   @override
   Future<File?> pickSingleImageFromGallery() async {
     final picked = await _picker.pickImage(
       source: ImageSource.gallery,
-      imageQuality: 50,
-      maxWidth: 1024,
-      maxHeight: 1024,
     );
 
     if (picked == null) return null;
-    return File(picked.path);
+
+    final originalFile = File(picked.path);
+
+    return _compressImage(
+      originalFile,
+      maxWidth: 1024,
+      maxHeight: 1024,
+      quality: 70,
+    );
   }
 
-///---------------------
-/// 사진 하나만 등록할 때
-///---------------------
+  /// ---------------------
+  /// 사진 하나만 등록할 때
+  /// ---------------------
   @override
   Future<File?> pickImageFromCamera() async {
     final pickedImage = await _picker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 50,
-      maxWidth: 1024,
-      maxHeight: 1024,
     );
 
     if (pickedImage == null) return null;
-    return File(pickedImage.path);
+
+    final originalFile = File(pickedImage.path);
+
+    return _compressImage(
+      originalFile,
+      maxWidth: 1280,
+      maxHeight: 1280,
+      quality: 70,
+    );
   }
 
-/// ======================
-/// 운동 기록 사진 등록할 때 사용
-/// ======================
+  /// ======================
+  /// 운동 기록 사진 등록할 때 사용
+  /// ======================
   @override
   Future<List<File>> pickMultipleImages() async {
-    /// 여기에서 _picker.pickMultiImage() 메서드를 누르면,
-    /// 사용자가 갤러리에서 여러 이미지를 선택할 수 있는 인터페이스가 나타납니다.
-    /// 
-    /// 이미지를 여러개 골랐을 때, pickedImages는 List<XFile> 타입이 됩니다.
-    /// XFile은 이미지 파일의 경로와 메타데이터를 포함하는 객체입니다.
-    final pickedImages = await _picker.pickMultiImage(
-      imageQuality: 50,
-      maxWidth: 1024,
-      maxHeight: 1024,
-    );
+    final pickedImages = await _picker.pickMultiImage();
 
-/// pickedImages는 List<XFile> 타입이다.
-/// map 내부의 xFile은 List 안의 "각각의 XFile 객체"를 의미한다.
+    if (pickedImages.isEmpty) {
+      return [];
+    }
 
-    return pickedImages.map((xFile) => File(xFile.path)).toList();
+    final compressedImages = <File>[];
+
+    for (final xFile in pickedImages) {
+      final originalFile = File(xFile.path);
+
+      final compressedFile = await _compressImage(
+        originalFile,
+        maxWidth: 1280,
+        maxHeight: 1280,
+        quality: 70,
+      );
+
+      compressedImages.add(compressedFile);
+    }
+
+    return compressedImages;
   }
 }

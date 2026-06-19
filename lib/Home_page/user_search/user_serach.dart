@@ -1,8 +1,8 @@
+import 'dart:async';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
-
-import 'package:home_function/widget/app_snack_bar.dart';
 
 class UserSearchPage extends StatefulWidget {
   const UserSearchPage({
@@ -18,26 +18,37 @@ class UserSearchPage extends StatefulWidget {
 
 class _UserSearchPageState extends State<UserSearchPage> {
   static const Color _bg = Color(0xFF000000);
-  static const Color _surface = Color(0xFF0B0B0D);
-  static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
-  static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _accent = Color(0xFF5DADEC);
-  static const Color _danger = Color(0xFFE85D5D);
 
   final TextEditingController _searchController = TextEditingController();
   final FocusNode _searchFocusNode = FocusNode();
 
+  Timer? _searchDebounce;
   String _query = '';
 
   @override
   void initState() {
     super.initState();
+    _searchController.addListener(_onSearchChanged);
+  }
 
-    _searchController.addListener(() {
-      final nextQuery = _searchController.text.trim();
+  @override
+  void dispose() {
+    _searchDebounce?.cancel();
+    _searchController.removeListener(_onSearchChanged);
+    _searchController.dispose();
+    _searchFocusNode.dispose();
+    super.dispose();
+  }
 
+  void _onSearchChanged() {
+    final nextQuery = _searchController.text.trim();
+
+    _searchDebounce?.cancel();
+
+    _searchDebounce = Timer(const Duration(milliseconds: 250), () {
+      if (!mounted) return;
       if (nextQuery == _query) return;
 
       setState(() {
@@ -46,27 +57,43 @@ class _UserSearchPageState extends State<UserSearchPage> {
     });
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    _searchFocusNode.dispose();
-    super.dispose();
+  void _clearSearch() {
+    _searchDebounce?.cancel();
+
+    _searchController.clear();
+
+    if (_query.isNotEmpty) {
+      setState(() {
+        _query = '';
+      });
+    }
+
+    _searchFocusNode.requestFocus();
   }
 
-  void _clearSearch() {
-    _searchController.clear();
-    _searchFocusNode.requestFocus();
+  ScrollPhysics _pageScrollPhysics(BuildContext context) {
+    final platform = Theme.of(context).platform;
+
+    if (platform == TargetPlatform.iOS) {
+      return const BouncingScrollPhysics();
+    }
+
+    return const ClampingScrollPhysics();
   }
 
   @override
   Widget build(BuildContext context) {
+    final contentPadding = MediaQuery.sizeOf(context).width < 360 ? 14.0 : 16.0;
+
     return Scaffold(
       backgroundColor: _bg,
       resizeToAvoidBottomInset: true,
       appBar: AppBar(
         backgroundColor: _bg,
         surfaceTintColor: Colors.transparent,
+        shadowColor: Colors.transparent,
         elevation: 0,
+        scrolledUnderElevation: 0,
         automaticallyImplyLeading: false,
         centerTitle: true,
         toolbarHeight: 52,
@@ -99,7 +126,12 @@ class _UserSearchPageState extends State<UserSearchPage> {
           child: Column(
             children: [
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 14, 16, 10),
+                padding: EdgeInsets.fromLTRB(
+                  contentPadding,
+                  14,
+                  contentPadding,
+                  10,
+                ),
                 child: _SearchTextField(
                   controller: _searchController,
                   focusNode: _searchFocusNode,
@@ -110,6 +142,7 @@ class _UserSearchPageState extends State<UserSearchPage> {
                 child: _UserSearchBody(
                   query: _query,
                   currentUserId: widget.currentUserId,
+                  scrollPhysics: _pageScrollPhysics(context),
                 ),
               ),
             ],
@@ -150,6 +183,8 @@ class _SearchTextField extends StatelessWidget {
           keyboardType: TextInputType.text,
           textInputAction: TextInputAction.search,
           cursorColor: _accent,
+          autocorrect: false,
+          enableSuggestions: false,
           style: const TextStyle(
             color: _primaryText,
             fontSize: 16,
@@ -217,10 +252,12 @@ class _UserSearchBody extends StatelessWidget {
   const _UserSearchBody({
     required this.query,
     required this.currentUserId,
+    required this.scrollPhysics,
   });
 
   final String query;
   final String currentUserId;
+  final ScrollPhysics scrollPhysics;
 
   static const Color _bg = Color(0xFF000000);
   static const Color _line = Color(0xFF242428);
@@ -264,16 +301,7 @@ class _UserSearchBody extends StatelessWidget {
           }
 
           if (snapshot.hasError) {
-            WidgetsBinding.instance.addPostFrameCallback((_) {
-              if (!context.mounted) return;
-
-              showAppSnackBar(
-                context,
-                message: '검색 중 오류가 발생했습니다.',
-                icon: Icons.error_rounded,
-                isError: true,
-              );
-            });
+            debugPrint('UserSearchPage search error: ${snapshot.error}');
 
             return const _SearchEmptyState(
               icon: Icons.error_outline_rounded,
@@ -298,12 +326,12 @@ class _UserSearchBody extends StatelessWidget {
 
           return ListView.separated(
             keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-            physics: const BouncingScrollPhysics(),
+            physics: scrollPhysics,
             padding: EdgeInsets.fromLTRB(
               0,
               8,
               0,
-              90 + MediaQuery.paddingOf(context).bottom,
+              88 + MediaQuery.paddingOf(context).bottom,
             ),
             itemCount: docs.length,
             separatorBuilder: (_, __) => const Divider(
@@ -317,15 +345,16 @@ class _UserSearchBody extends StatelessWidget {
               final userId = userDoc.id;
               final data = userDoc.data();
 
+              final rawDisplayName = data['displayName'];
               final displayName =
-                  (data['displayName'] as String?)?.trim().isNotEmpty == true
-                      ? data['displayName'] as String
+                  rawDisplayName is String && rawDisplayName.trim().isNotEmpty
+                      ? rawDisplayName.trim()
                       : '사용자';
 
-              final email = (data['email'] as String?) ?? '';
-
-              final profileImageUrl =
-                  (data['profileImageUrl'] as String?)?.trim();
+              final rawProfileImageUrl = data['profileImageUrl'];
+              final profileImageUrl = rawProfileImageUrl is String
+                  ? rawProfileImageUrl.trim()
+                  : null;
 
               final hasProfileImage =
                   profileImageUrl != null && profileImageUrl.isNotEmpty;
@@ -333,7 +362,6 @@ class _UserSearchBody extends StatelessWidget {
               return _UserSearchTile(
                 userId: userId,
                 displayName: displayName,
-                email: email,
                 profileImageUrl: profileImageUrl,
                 hasProfileImage: hasProfileImage,
                 onTap: () {
@@ -353,7 +381,6 @@ class _UserSearchTile extends StatelessWidget {
   const _UserSearchTile({
     required this.userId,
     required this.displayName,
-    required this.email,
     required this.profileImageUrl,
     required this.hasProfileImage,
     required this.onTap,
@@ -361,52 +388,32 @@ class _UserSearchTile extends StatelessWidget {
 
   final String userId;
   final String displayName;
-  final String email;
   final String? profileImageUrl;
   final bool hasProfileImage;
   final VoidCallback onTap;
 
   static const Color _bg = Color(0xFF000000);
-  static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _accent = Color(0xFF5DADEC);
 
   @override
   Widget build(BuildContext context) {
+    final horizontalPadding = MediaQuery.sizeOf(context).width < 360 ? 14.0 : 16.0;
+
     return Material(
       color: _bg,
       child: InkWell(
         onTap: onTap,
         child: Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: 16,
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
             vertical: 11,
           ),
           child: Row(
             children: [
-              Container(
-                padding: const EdgeInsets.all(2),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: _accent.withOpacity(0.9),
-                    width: 1.5,
-                  ),
-                ),
-                child: CircleAvatar(
-                  radius: 24,
-                  backgroundColor: _surfaceSoft,
-                  backgroundImage:
-                      hasProfileImage ? NetworkImage(profileImageUrl!) : null,
-                  child: !hasProfileImage
-                      ? const Icon(
-                          Icons.person_rounded,
-                          color: _secondaryText,
-                          size: 27,
-                        )
-                      : null,
-                ),
+              _UserSearchAvatar(
+                profileImageUrl: profileImageUrl,
+                hasProfileImage: hasProfileImage,
               ),
               const SizedBox(width: 13),
               Expanded(
@@ -426,11 +433,11 @@ class _UserSearchTile extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    Text(
-                      email.isNotEmpty ? email : '프로필 보기',
+                    const Text(
+                      '프로필 보기',
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
+                      style: TextStyle(
                         color: _secondaryText,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w600,
@@ -447,6 +454,74 @@ class _UserSearchTile extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _UserSearchAvatar extends StatelessWidget {
+  const _UserSearchAvatar({
+    required this.profileImageUrl,
+    required this.hasProfileImage,
+  });
+
+  final String? profileImageUrl;
+  final bool hasProfileImage;
+
+  static const Color _surfaceSoft = Color(0xFF121216);
+  static const Color _secondaryText = Color(0xFF9B9BA1);
+  static const Color _accent = Color(0xFF5DADEC);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 52,
+      height: 52,
+      padding: const EdgeInsets.all(2),
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        border: Border.all(
+          color: _accent.withAlpha(230),
+          width: 1.5,
+        ),
+      ),
+      child: ClipOval(
+        child: ColoredBox(
+          color: _surfaceSoft,
+          child: hasProfileImage && profileImageUrl != null
+              ? Image.network(
+                  profileImageUrl!,
+                  fit: BoxFit.cover,
+                  width: 48,
+                  height: 48,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(
+                      Icons.person_rounded,
+                      color: _secondaryText,
+                      size: 27,
+                    );
+                  },
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+
+                    return const Center(
+                      child: SizedBox(
+                        width: 17,
+                        height: 17,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: _secondaryText,
+                        ),
+                      ),
+                    );
+                  },
+                )
+              : const Icon(
+                  Icons.person_rounded,
+                  color: _secondaryText,
+                  size: 27,
+                ),
         ),
       ),
     );
@@ -480,57 +555,65 @@ class _SearchEmptyState extends StatelessWidget {
     return ColoredBox(
       color: _bg,
       child: Center(
-        child: Container(
-          width: double.infinity,
-          margin: const EdgeInsets.all(24),
-          padding: const EdgeInsets.fromLTRB(22, 25, 22, 24),
-          decoration: BoxDecoration(
-            color: _surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: _line,
-              width: 0.8,
-            ),
+        child: SingleChildScrollView(
+          physics: const ClampingScrollPhysics(),
+          padding: EdgeInsets.fromLTRB(
+            24,
+            24,
+            24,
+            88 + MediaQuery.paddingOf(context).bottom,
           ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                width: 58,
-                height: 58,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: pointColor.withOpacity(0.13),
-                ),
-                child: Icon(
-                  icon,
-                  size: 32,
-                  color: pointColor,
-                ),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.fromLTRB(22, 25, 22, 24),
+            decoration: BoxDecoration(
+              color: _surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: _line,
+                width: 0.8,
               ),
-              const SizedBox(height: 16),
-              Text(
-                title,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _primaryText,
-                  fontSize: 16,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: -0.2,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 58,
+                  height: 58,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: pointColor.withAlpha(33),
+                  ),
+                  child: Icon(
+                    icon,
+                    size: 32,
+                    color: pointColor,
+                  ),
                 ),
-              ),
-              const SizedBox(height: 7),
-              Text(
-                subtitle,
-                textAlign: TextAlign.center,
-                style: const TextStyle(
-                  color: _secondaryText,
-                  fontSize: 13,
-                  height: 1.45,
-                  fontWeight: FontWeight.w600,
+                const SizedBox(height: 16),
+                Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _primaryText,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.2,
+                  ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 7),
+                Text(
+                  subtitle,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _secondaryText,
+                    fontSize: 13,
+                    height: 1.45,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

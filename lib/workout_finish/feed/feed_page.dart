@@ -152,7 +152,7 @@ class FeedCard extends ConsumerWidget {
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _softText = Color(0xFF66666D);
+  // static const Color _softText = Color(0xFF66666D);
   static const Color _accent = Color(0xFF5DADEC);
   static const Color _danger = Color(0xFFE85D5D);
 
@@ -850,7 +850,7 @@ class _NoImageWorkoutBanner extends StatelessWidget {
   const _NoImageWorkoutBanner();
 
   static const Color _surface = Color(0xFF0B0B0D);
-  static const Color _surfaceSoft = Color(0xFF121216);
+  // static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);

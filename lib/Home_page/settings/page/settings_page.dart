@@ -11,18 +11,37 @@ class SettingsPage extends ConsumerWidget {
   const SettingsPage({super.key});
 
   static const Color _bg = Color(0xFF000000);
-  static const Color _surface = Color(0xFF0B0B0D);
-  static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
-  static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _softText = Color(0xFF66666D);
   static const Color _accent = Color(0xFF5DADEC);
   static const Color _danger = Color(0xFFE85D5D);
+
+  static bool _isIOS(BuildContext context) {
+    return Theme.of(context).platform == TargetPlatform.iOS;
+  }
+
+  static IconData _backIcon(BuildContext context) {
+    return _isIOS(context)
+        ? Icons.arrow_back_ios_new_rounded
+        : Icons.arrow_back_rounded;
+  }
+
+  static double _appBarHeight(BuildContext context) {
+    return _isIOS(context) ? 52 : 56;
+  }
+
+  static ScrollPhysics _scrollPhysics(BuildContext context) {
+    return _isIOS(context)
+        ? const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          )
+        : const ClampingScrollPhysics();
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final media = MediaQuery.of(context);
+    final isIOS = _isIOS(context);
 
     return Scaffold(
       backgroundColor: _bg,
@@ -31,7 +50,8 @@ class SettingsPage extends ConsumerWidget {
         surfaceTintColor: Colors.transparent,
         elevation: 0,
         centerTitle: true,
-        toolbarHeight: 52,
+        toolbarHeight: _appBarHeight(context),
+        leadingWidth: isIOS ? 52 : 56,
         title: const Text(
           '설정',
           maxLines: 1,
@@ -44,12 +64,13 @@ class SettingsPage extends ConsumerWidget {
           ),
         ),
         leading: IconButton(
+          tooltip: '뒤로가기',
           visualDensity: VisualDensity.compact,
           onPressed: () => context.pop(),
-          icon: const Icon(
-            Icons.arrow_back_ios_new_rounded,
+          icon: Icon(
+            _backIcon(context),
             color: _primaryText,
-            size: 20,
+            size: isIOS ? 20 : 23,
           ),
         ),
         bottom: const PreferredSize(
@@ -65,7 +86,8 @@ class SettingsPage extends ConsumerWidget {
         top: false,
         bottom: false,
         child: ListView(
-          physics: const BouncingScrollPhysics(),
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          physics: _scrollPhysics(context),
           padding: EdgeInsets.fromLTRB(
             0,
             12,
@@ -86,9 +108,7 @@ class SettingsPage extends ConsumerWidget {
                 ),
               ],
             ),
-
             const SizedBox(height: 22),
-
             const _SectionTitle(title: '앱 설정'),
             _SettingGroup(
               children: [
@@ -111,9 +131,7 @@ class SettingsPage extends ConsumerWidget {
                 ),
               ],
             ),
-
             const SizedBox(height: 22),
-
             const _SectionTitle(title: '고객지원'),
             _SettingGroup(
               children: [
@@ -136,9 +154,7 @@ class SettingsPage extends ConsumerWidget {
                 ),
               ],
             ),
-
             const SizedBox(height: 22),
-
             const _SectionTitle(title: '계정 관리'),
             _SettingGroup(
               children: [
@@ -155,7 +171,7 @@ class SettingsPage extends ConsumerWidget {
                 _SettingTile(
                   icon: Icons.delete_forever_outlined,
                   title: '회원 탈퇴',
-                  subtitle: '계정과 데이터 삭제',
+                  subtitle: '계정과 이용 기록 삭제',
                   iconColor: _danger,
                   titleColor: _danger,
                   onTap: () {
@@ -182,13 +198,13 @@ class SettingsPage extends ConsumerWidget {
       isDismissible: true,
       enableDrag: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.68),
+      barrierColor: Colors.black.withValues(alpha: 0.68),
       builder: (sheetContext) {
         return _ConfirmSheet(
           icon: Icons.logout_rounded,
           iconColor: _accent,
           title: '로그아웃',
-          message: '정말 현재 계정에서 로그아웃 하시겠습니까?',
+          message: '현재 계정에서 로그아웃하시겠습니까?',
           confirmText: '로그아웃',
           confirmColor: _accent,
           onCancel: () {
@@ -271,8 +287,11 @@ class _SettingGroup extends StatelessWidget {
           width: 0.8,
         ),
       ),
-      child: Column(
-        children: children,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(18),
+        child: Column(
+          children: children,
+        ),
       ),
     );
   }
@@ -308,8 +327,9 @@ class _SettingTile extends StatelessWidget {
     return Material(
       color: Colors.transparent,
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
         onTap: onTap,
+        splashColor: pointColor.withValues(alpha: 0.08),
+        highlightColor: pointColor.withValues(alpha: 0.05),
         child: Padding(
           padding: const EdgeInsets.fromLTRB(14, 13, 12, 13),
           child: Row(
@@ -318,7 +338,7 @@ class _SettingTile extends StatelessWidget {
                 width: 39,
                 height: 39,
                 decoration: BoxDecoration(
-                  color: pointColor.withOpacity(0.13),
+                  color: pointColor.withValues(alpha: 0.13),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -353,6 +373,7 @@ class _SettingTile extends StatelessWidget {
                         color: _secondaryText,
                         fontSize: 12.5,
                         fontWeight: FontWeight.w500,
+                        letterSpacing: -0.05,
                       ),
                     ),
                   ],
@@ -424,41 +445,54 @@ class _ConfirmSheet extends StatelessWidget {
   });
 
   static const Color _bg = Color(0xFF000000);
-  static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
 
+  bool _isIOS(BuildContext context) {
+    return Theme.of(context).platform == TargetPlatform.iOS;
+  }
+
+  ScrollPhysics _scrollPhysics(BuildContext context) {
+    return _isIOS(context)
+        ? const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          )
+        : const ClampingScrollPhysics();
+  }
+
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
+    final isIOS = _isIOS(context);
     final maxWidth = math.min(media.size.width - 16, 460.0);
 
     return SafeArea(
       top: false,
-      child: Container(
+      child: Align(
         alignment: Alignment.bottomCenter,
         child: ConstrainedBox(
           constraints: BoxConstraints(
             maxWidth: maxWidth,
+            maxHeight: media.size.height * 0.9,
           ),
           child: Container(
-            margin: const EdgeInsets.fromLTRB(8, 0, 8, 8),
-            decoration: const BoxDecoration(
+            margin: EdgeInsets.fromLTRB(
+              8,
+              0,
+              8,
+              isIOS ? 8 : 10,
+            ),
+            decoration: BoxDecoration(
               color: _bg,
-              borderRadius: BorderRadius.vertical(
-                top: Radius.circular(24),
-                bottom: Radius.circular(24),
-              ),
-              border: Border(
-                top: BorderSide(color: _line, width: 0.8),
-                left: BorderSide(color: _line, width: 0.8),
-                right: BorderSide(color: _line, width: 0.8),
-                bottom: BorderSide(color: _line, width: 0.8),
+              borderRadius: BorderRadius.circular(isIOS ? 24 : 22),
+              border: Border.all(
+                color: _line,
+                width: 0.8,
               ),
             ),
             child: SingleChildScrollView(
-              physics: const BouncingScrollPhysics(),
+              physics: _scrollPhysics(context),
               padding: EdgeInsets.fromLTRB(
                 18,
                 10,
@@ -481,7 +515,7 @@ class _ConfirmSheet extends StatelessWidget {
                     width: 54,
                     height: 54,
                     decoration: BoxDecoration(
-                      color: iconColor.withOpacity(0.14),
+                      color: iconColor.withValues(alpha: 0.14),
                       shape: BoxShape.circle,
                     ),
                     child: Icon(

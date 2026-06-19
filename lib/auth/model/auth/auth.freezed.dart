@@ -220,8 +220,8 @@ return $default(_that.uid,_that.displayName,_that.email,_that.displayNameKey,_th
 /// @nodoc
 @JsonSerializable()
 
-class _Auth implements Auth {
-  const _Auth({required this.uid, this.displayName = '', this.email = '', this.displayNameKey = '', this.workoutCount = 0, this.followersCount = 0, this.followingsCount = 0, this.totalDistance = 0.0, this.isPrivate = false, @DateTimeConverter() this.createdAt, @DateTimeConverter() this.updatedAt, this.bio = '', this.profileImageUrl = ''});
+class _Auth extends Auth {
+  const _Auth({required this.uid, this.displayName = '', this.email = '', this.displayNameKey = '', this.workoutCount = 0, this.followersCount = 0, this.followingsCount = 0, this.totalDistance = 0.0, this.isPrivate = false, @DateTimeConverter() this.createdAt, @DateTimeConverter() this.updatedAt, this.bio = '', this.profileImageUrl = ''}): super._();
   factory _Auth.fromJson(Map<String, dynamic> json) => _$AuthFromJson(json);
 
 @override final  String uid;

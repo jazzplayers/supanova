@@ -5,7 +5,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:table_calendar/table_calendar.dart';
 
-import 'package:home_function/auth/model/auth/auth_provider.dart';
 import 'package:home_function/workout_finish/workout_finish.dart';
 import 'package:home_function/workout_finish/workout_finish_provider.dart';
 
@@ -29,11 +28,42 @@ class _WorkoutCalendarPageState extends ConsumerState<WorkoutCalendarPage> {
 
   static const Color _bg = Color(0xFF000000);
   static const Color _surface = Color(0xFF0B0B0D);
+  static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
   static const Color _softText = Color(0xFF66666D);
   static const Color _accent = Color(0xFF5DADEC);
+
+  bool _isIOS(BuildContext context) {
+    return Theme.of(context).platform == TargetPlatform.iOS;
+  }
+
+  IconData _backIcon(BuildContext context) {
+    return _isIOS(context)
+        ? Icons.arrow_back_ios_new_rounded
+        : Icons.arrow_back_rounded;
+  }
+
+  double _appBarHeight(BuildContext context) {
+    return _isIOS(context) ? 52 : 56;
+  }
+
+  ScrollPhysics _scrollPhysics(BuildContext context) {
+    return _isIOS(context)
+        ? const BouncingScrollPhysics(
+            parent: AlwaysScrollableScrollPhysics(),
+          )
+        : const ClampingScrollPhysics();
+  }
+
+  void _goBack(BuildContext context) {
+    if (context.canPop()) {
+      context.pop();
+    } else {
+      context.go('/home');
+    }
+  }
 
   DateTime _normalizeDay(DateTime day) {
     return DateTime(day.year, day.month, day.day);
@@ -45,12 +75,25 @@ class _WorkoutCalendarPageState extends ConsumerState<WorkoutCalendarPage> {
   ) {
     final targetDay = _normalizeDay(day);
 
-    return records.where((record) {
+    final selectedRecords = records.where((record) {
       final timestamp = record.timestamp;
       if (timestamp == null) return false;
 
       return _normalizeDay(timestamp) == targetDay;
     }).toList();
+
+    selectedRecords.sort((a, b) {
+      final aTime = a.timestamp;
+      final bTime = b.timestamp;
+
+      if (aTime == null && bTime == null) return 0;
+      if (aTime == null) return 1;
+      if (bTime == null) return -1;
+
+      return bTime.compareTo(aTime);
+    });
+
+    return selectedRecords;
   }
 
   String _formatSelectedDate(DateTime day) {
@@ -63,10 +106,13 @@ class _WorkoutCalendarPageState extends ConsumerState<WorkoutCalendarPage> {
     final seconds = totalSeconds % 60;
 
     if (hours > 0) {
-      return '${hours.toString().padLeft(2, '0')}:${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+      return '${hours.toString().padLeft(2, '0')}:'
+          '${minutes.toString().padLeft(2, '0')}:'
+          '${seconds.toString().padLeft(2, '0')}';
     }
 
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
+    return '${minutes.toString().padLeft(2, '0')}:'
+        '${seconds.toString().padLeft(2, '0')}';
   }
 
   String _formatPace(double pace) {
@@ -77,7 +123,8 @@ class _WorkoutCalendarPageState extends ConsumerState<WorkoutCalendarPage> {
     final minutes = pace.floor();
     final seconds = ((pace - minutes) * 60).round();
 
-    return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')} /km';
+    return '${minutes.toString().padLeft(2, '0')}:'
+        '${seconds.toString().padLeft(2, '0')} /km';
   }
 
   double _totalDistanceKm(List<WorkoutFinish> records) {
@@ -117,277 +164,296 @@ class _WorkoutCalendarPageState extends ConsumerState<WorkoutCalendarPage> {
         final media = MediaQuery.of(sheetContext);
         final height = media.size.height;
         final isSmallHeight = height < 720;
+        final isIOS = _isIOS(sheetContext);
+        final maxWidth = math.min(media.size.width, 560.0);
 
         final double initialSize;
         if (selectedRecords.isEmpty) {
           initialSize = isSmallHeight ? 0.48 : 0.40;
         } else {
-          initialSize = isSmallHeight ? 0.78 : 0.68;
+          initialSize = isSmallHeight ? 0.80 : 0.68;
         }
 
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: initialSize,
-          minChildSize: 0.34,
-          maxChildSize: 0.92,
-          builder: (context, scrollController) {
-            return Container(
-              decoration: const BoxDecoration(
-                color: _bg,
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(24),
-                ),
-                border: Border(
-                  top: BorderSide(
-                    color: _line,
-                    width: 0.8,
+        return Align(
+          alignment: Alignment.bottomCenter,
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: maxWidth,
+            ),
+            child: DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: initialSize,
+              minChildSize: 0.34,
+              maxChildSize: 0.92,
+              builder: (context, scrollController) {
+                return Container(
+                  margin: EdgeInsets.fromLTRB(
+                    8,
+                    0,
+                    8,
+                    isIOS ? 8 : 10,
                   ),
-                ),
-              ),
-              child: SafeArea(
-                top: false,
-                child: CustomScrollView(
-                  controller: scrollController,
-                  physics: const BouncingScrollPhysics(),
-                  slivers: [
-                    SliverToBoxAdapter(
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const SizedBox(height: 10),
-                          Container(
-                            width: 38,
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFF3A3A40),
-                              borderRadius: BorderRadius.circular(999),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 18),
-                            child: Row(
-                              children: [
-                                Container(
-                                  width: 42,
-                                  height: 42,
-                                  decoration: BoxDecoration(
-                                    gradient: LinearGradient(
-                                      colors: [
-                                        _accent.withValues(alpha: 0.30),
-                                        _accent.withValues(alpha: 0.08),
-                                      ],
-                                      begin: Alignment.topLeft,
-                                      end: Alignment.bottomRight,
-                                    ),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: _accent.withValues(alpha: 0.25),
-                                    ),
-                                  ),
-                                  child: const Icon(
-                                    Icons.calendar_month_rounded,
-                                    color: _primaryText,
-                                    size: 21,
-                                  ),
+                  decoration: BoxDecoration(
+                    color: _bg,
+                    borderRadius: BorderRadius.circular(isIOS ? 24 : 22),
+                    border: Border.all(
+                      color: _line,
+                      width: 0.8,
+                    ),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: CustomScrollView(
+                      controller: scrollController,
+                      physics: _scrollPhysics(sheetContext),
+                      slivers: [
+                        SliverToBoxAdapter(
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const SizedBox(height: 10),
+                              Container(
+                                width: 38,
+                                height: 4,
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFF3A3A40),
+                                  borderRadius: BorderRadius.circular(999),
                                 ),
-                                const SizedBox(width: 12),
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Text(
-                                        _formatSelectedDate(selectedDay),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: _primaryText,
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w900,
-                                          letterSpacing: -0.4,
+                              ),
+                              const SizedBox(height: 16),
+                              Padding(
+                                padding:
+                                    const EdgeInsets.symmetric(horizontal: 18),
+                                child: Row(
+                                  children: [
+                                    Container(
+                                      width: 42,
+                                      height: 42,
+                                      decoration: BoxDecoration(
+                                        color: _accent.withValues(alpha: 0.13),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color:
+                                              _accent.withValues(alpha: 0.25),
+                                          width: 0.8,
                                         ),
                                       ),
-                                      const SizedBox(height: 4),
-                                      Text(
-                                        selectedRecords.isEmpty
-                                            ? '운동 기록이 없습니다'
-                                            : '${selectedRecords.length}개의 운동 기록',
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                        style: const TextStyle(
-                                          color: _secondaryText,
-                                          fontSize: 13,
-                                          fontWeight: FontWeight.w600,
+                                      child: const Icon(
+                                        Icons.calendar_month_rounded,
+                                        color: _accent,
+                                        size: 21,
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment:
+                                            CrossAxisAlignment.start,
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Text(
+                                            _formatSelectedDate(selectedDay),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: _primaryText,
+                                              fontSize: 17,
+                                              fontWeight: FontWeight.w900,
+                                              letterSpacing: -0.4,
+                                            ),
+                                          ),
+                                          const SizedBox(height: 4),
+                                          Text(
+                                            selectedRecords.isEmpty
+                                                ? '운동 기록이 없습니다'
+                                                : '${selectedRecords.length}개의 운동 기록',
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: const TextStyle(
+                                              color: _secondaryText,
+                                              fontSize: 13,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      tooltip: '닫기',
+                                      visualDensity: VisualDensity.compact,
+                                      onPressed: () {
+                                        Navigator.of(sheetContext).pop();
+                                      },
+                                      icon: const Icon(
+                                        Icons.close_rounded,
+                                        color: _primaryText,
+                                        size: 22,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (selectedRecords.isNotEmpty) ...[
+                                const SizedBox(height: 16),
+                                Padding(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 18,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        child: _SheetSummaryBox(
+                                          label: '총 거리',
+                                          value:
+                                              '${totalDistance.toStringAsFixed(2)} km',
+                                        ),
+                                      ),
+                                      const SizedBox(width: 10),
+                                      Expanded(
+                                        child: _SheetSummaryBox(
+                                          label: '총 시간',
+                                          value: totalTime,
                                         ),
                                       ),
                                     ],
                                   ),
                                 ),
-                                IconButton(
-                                  visualDensity: VisualDensity.compact,
-                                  onPressed: () {
-                                    Navigator.of(sheetContext).pop();
-                                  },
-                                  icon: const Icon(
-                                    Icons.close_rounded,
-                                    color: _primaryText,
-                                    size: 22,
-                                  ),
-                                ),
                               ],
-                            ),
-                          ),
-                          if (selectedRecords.isNotEmpty) ...[
-                            const SizedBox(height: 16),
-                            Padding(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 18),
-                              child: Row(
-                                children: [
-                                  Expanded(
-                                    child: _SheetSummaryBox(
-                                      label: '총 거리',
-                                      value:
-                                          '${totalDistance.toStringAsFixed(2)} km',
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: _SheetSummaryBox(
-                                      label: '총 시간',
-                                      value: totalTime,
-                                    ),
-                                  ),
-                                ],
+                              const SizedBox(height: 16),
+                              const Divider(
+                                color: _line,
+                                height: 1,
+                                thickness: 0.7,
                               ),
-                            ),
-                          ],
-                          const SizedBox(height: 16),
-                          const Divider(
-                            color: _line,
-                            height: 1,
-                            thickness: 0.7,
+                            ],
                           ),
-                        ],
-                      ),
-                    ),
-                    if (selectedRecords.isEmpty)
-                      const SliverFillRemaining(
-                        hasScrollBody: false,
-                        child: _BottomSheetEmptyView(),
-                      )
-                    else
-                      SliverList.separated(
-                        itemCount: selectedRecords.length,
-                        separatorBuilder: (_, _) => const Divider(
-                          color: _line,
-                          height: 1,
-                          thickness: 0.6,
-                          indent: 82,
                         ),
-                        itemBuilder: (context, index) {
-                          final record = selectedRecords[index];
+                        if (selectedRecords.isEmpty)
+                          const SliverFillRemaining(
+                            hasScrollBody: false,
+                            child: _BottomSheetEmptyView(),
+                          )
+                        else
+                          SliverList.separated(
+                            itemCount: selectedRecords.length,
+                            separatorBuilder: (_, _) => const Divider(
+                              color: _line,
+                              height: 1,
+                              thickness: 0.6,
+                              indent: 82,
+                            ),
+                            itemBuilder: (context, index) {
+                              final record = selectedRecords[index];
 
-                          return InkWell(
-                            onTap: () {
-                              Navigator.of(sheetContext).pop();
+                              return InkWell(
+                                onTap: () {
+                                  Navigator.of(sheetContext).pop();
 
-                              parentContext.push(
-                                '/workoutFeed',
-                                extra: record,
+                                  parentContext.push(
+                                    '/workoutFeed',
+                                    extra: record,
+                                  );
+                                },
+                                child: _WorkoutRecordTile(
+                                  index: index,
+                                  distance:
+                                      '${(record.distanceMeters / 1000).toStringAsFixed(2)} km',
+                                  time: _formatDuration(record.seconds),
+                                  speed:
+                                      '${record.speedKmh.toStringAsFixed(1)} km/h',
+                                  pace: _formatPace(record.paceMinPerKm),
+                                ),
                               );
                             },
-                            child: _WorkoutRecordTile(
-                              index: index,
-                              distance:
-                                  '${(record.distanceMeters / 1000).toStringAsFixed(2)} km',
-                              time: _formatDuration(record.seconds),
-                              speed:
-                                  '${record.speedKmh.toStringAsFixed(1)} km/h',
-                              pace: _formatPace(record.paceMinPerKm),
-                            ),
-                          );
-                        },
-                      ),
-                    SliverToBoxAdapter(
-                      child: SizedBox(
-                        height: 18 + media.padding.bottom,
-                      ),
+                          ),
+                        SliverToBoxAdapter(
+                          child: SizedBox(
+                            height: 18 + media.padding.bottom,
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
-              ),
-            );
-          },
+                  ),
+                );
+              },
+            ),
+          ),
         );
       },
+    );
+  }
+
+  PreferredSizeWidget _buildAppBar(BuildContext context) {
+    final isIOS = _isIOS(context);
+
+    return AppBar(
+      backgroundColor: _bg,
+      surfaceTintColor: Colors.transparent,
+      elevation: 0,
+      centerTitle: true,
+      toolbarHeight: _appBarHeight(context),
+      leadingWidth: isIOS ? 52 : 56,
+      leading: IconButton(
+        tooltip: '뒤로가기',
+        visualDensity: VisualDensity.compact,
+        onPressed: () => _goBack(context),
+        icon: Icon(
+          _backIcon(context),
+          color: _primaryText,
+          size: isIOS ? 20 : 23,
+        ),
+      ),
+      title: const Text(
+        '캘린더',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: TextStyle(
+          color: _primaryText,
+          fontSize: 18,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -0.35,
+        ),
+      ),
+      bottom: const PreferredSize(
+        preferredSize: Size.fromHeight(0.7),
+        child: Divider(
+          color: _line,
+          height: 0.7,
+          thickness: 0.7,
+        ),
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
     final recordsAsync = ref.watch(workoutFinishListProvider(widget.userId));
-    final userAsync = ref.watch(userAuthDataProvider(widget.userId));
 
     final media = MediaQuery.of(context);
     final size = media.size;
     final shortestSide = size.shortestSide;
+    final isSmallHeight = size.height < 720;
 
     final horizontalPadding = shortestSide < 370 ? 12.0 : 16.0;
-    final isSmallHeight = size.height < 720;
+    final maxWidth = math.min(size.width, 720.0);
 
     return Scaffold(
       backgroundColor: _bg,
-      appBar: AppBar(
-        backgroundColor: _bg,
-        surfaceTintColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: true,
-        toolbarHeight: 52,
-        title: Text('캘린더',
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            color: _primaryText,
-            fontSize: 17,
-            fontWeight: FontWeight.w900,
-            letterSpacing: -0.35,
-          ),
-        ),
-        bottom: const PreferredSize(
-          preferredSize: Size.fromHeight(0.7),
-          child: Divider(
-            color: _line,
-            height: 0.7,
-            thickness: 0.7,
-          ),
-        ),
-      ),
+      appBar: _buildAppBar(context),
       body: SafeArea(
         top: false,
         bottom: false,
         child: recordsAsync.when(
           loading: () => const Center(
             child: CircularProgressIndicator(
-              color: _primaryText,
-              strokeWidth: 2,
+              color: _accent,
+              strokeWidth: 2.5,
             ),
           ),
-          error: (e, st) => const Center(
-            child: Padding(
-              padding: EdgeInsets.all(24),
-              child: Text(
-                '운동 기록을 불러오지 못했습니다.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: _secondaryText,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+          error: (e, st) => const _StateMessage(
+            icon: Icons.error_outline_rounded,
+            title: '운동 기록을 불러오지 못했습니다',
+            message: '인터넷 연결을 확인한 뒤 다시 시도해주세요.',
           ),
           data: (records) {
             final monthRecords = records.where((record) {
@@ -400,174 +466,192 @@ class _WorkoutCalendarPageState extends ConsumerState<WorkoutCalendarPage> {
 
             final monthDistance = _totalDistanceKm(monthRecords);
 
-            return LayoutBuilder(
-              builder: (context, constraints) {
-                final contentWidth = constraints.maxWidth;
-                final dayCellWidth =
-                    ((contentWidth - (horizontalPadding * 2)) / 7)
-                        .clamp(40.0, 58.0);
+            return Center(
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: maxWidth,
+                ),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final contentWidth = constraints.maxWidth;
+                    final dayCellWidth =
+                        ((contentWidth - (horizontalPadding * 2) - 24) / 7)
+                            .clamp(38.0, 58.0);
 
-                final rowHeight = math.max(
-                  isSmallHeight ? 48.0 : 52.0,
-                  math.min(56.0, dayCellWidth + 8),
-                );
+                    final rowHeight = math.max(
+                      isSmallHeight ? 48.0 : 52.0,
+                      math.min(56.0, dayCellWidth + 8),
+                    );
 
-                return SingleChildScrollView(
-                  padding: EdgeInsets.fromLTRB(
-                    horizontalPadding,
-                    12,
-                    horizontalPadding,
-                    24 + media.padding.bottom,
-                  ),
-                  physics: const BouncingScrollPhysics(),
-                  child: Column(
-                    children: [
-                      _MonthOverviewCard(
-                        count: monthRecords.length,
-                        distance: monthDistance,
+                    return SingleChildScrollView(
+                      keyboardDismissBehavior:
+                          ScrollViewKeyboardDismissBehavior.onDrag,
+                      padding: EdgeInsets.fromLTRB(
+                        horizontalPadding,
+                        12,
+                        horizontalPadding,
+                        24 + media.padding.bottom,
                       ),
-                      SizedBox(height: isSmallHeight ? 12 : 16),
-                      TableCalendar<WorkoutFinish>(
-                        firstDay: DateTime.utc(2020, 1, 1),
-                        lastDay: DateTime.utc(2035, 12, 31),
-                        focusedDay: _focusedDay,
-                        selectedDayPredicate: (day) =>
-                            isSameDay(_selectedDay, day),
-                        calendarFormat: _calendarFormat,
-                        rowHeight: rowHeight,
-                        daysOfWeekHeight: 28,
-                        eventLoader: (day) => _getEventsForDay(day, records),
-                        availableGestures: AvailableGestures.horizontalSwipe,
-                        onDaySelected: (selectedDay, focusedDay) {
-                          final selectedRecords =
-                              _getEventsForDay(selectedDay, records);
+                      physics: _scrollPhysics(context),
+                      child: Column(
+                        children: [
+                          _MonthOverviewCard(
+                            count: monthRecords.length,
+                            distance: monthDistance,
+                          ),
+                          SizedBox(height: isSmallHeight ? 12 : 16),
+                          _CalendarCard(
+                            child: TableCalendar<WorkoutFinish>(
+                              firstDay: DateTime.utc(2020, 1, 1),
+                              lastDay: DateTime.utc(2035, 12, 31),
+                              focusedDay: _focusedDay,
+                              selectedDayPredicate: (day) =>
+                                  isSameDay(_selectedDay, day),
+                              calendarFormat: _calendarFormat,
+                              rowHeight: rowHeight,
+                              daysOfWeekHeight: 28,
+                              eventLoader: (day) =>
+                                  _getEventsForDay(day, records),
+                              availableGestures:
+                                  AvailableGestures.horizontalSwipe,
+                              onDaySelected: (selectedDay, focusedDay) {
+                                final selectedRecords =
+                                    _getEventsForDay(selectedDay, records);
 
-                          setState(() {
-                            _selectedDay = selectedDay;
-                            _focusedDay = focusedDay;
-                          });
+                                setState(() {
+                                  _selectedDay = selectedDay;
+                                  _focusedDay = focusedDay;
+                                });
 
-                          _showDayRecordsBottomSheet(
-                            parentContext: context,
-                            selectedDay: selectedDay,
-                            selectedRecords: selectedRecords,
-                          );
-                        },
-                        onFormatChanged: (format) {
-                          setState(() {
-                            _calendarFormat = format;
-                          });
-                        },
-                        onPageChanged: (focusedDay) {
-                          setState(() {
-                            _focusedDay = focusedDay;
-                          });
-                        },
-                        headerStyle: const HeaderStyle(
-                          formatButtonVisible: false,
-                          titleCentered: true,
-                          headerPadding: EdgeInsets.fromLTRB(0, 2, 0, 10),
-                          titleTextStyle: TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w900,
-                            color: _primaryText,
-                            letterSpacing: -0.4,
-                          ),
-                          leftChevronIcon: Icon(
-                            Icons.chevron_left_rounded,
-                            color: _primaryText,
-                            size: 28,
-                          ),
-                          rightChevronIcon: Icon(
-                            Icons.chevron_right_rounded,
-                            color: _primaryText,
-                            size: 28,
-                          ),
-                        ),
-                        daysOfWeekStyle: const DaysOfWeekStyle(
-                          weekdayStyle: TextStyle(
-                            color: _secondaryText,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                          weekendStyle: TextStyle(
-                            color: _secondaryText,
-                            fontSize: 12,
-                            fontWeight: FontWeight.w700,
-                          ),
-                        ),
-                        calendarStyle: const CalendarStyle(
-                          outsideDaysVisible: false,
-                          markersMaxCount: 0,
-                          cellMargin: EdgeInsets.zero,
-                          cellPadding: EdgeInsets.zero,
-                          defaultDecoration: BoxDecoration(
-                            color: Colors.transparent,
-                          ),
-                          weekendDecoration: BoxDecoration(
-                            color: Colors.transparent,
-                          ),
-                          todayDecoration: BoxDecoration(
-                            color: Colors.transparent,
-                          ),
-                          selectedDecoration: BoxDecoration(
-                            color: Colors.transparent,
-                          ),
-                          defaultTextStyle: TextStyle(
-                            color: Colors.transparent,
-                          ),
-                          weekendTextStyle: TextStyle(
-                            color: Colors.transparent,
-                          ),
-                          todayTextStyle: TextStyle(
-                            color: Colors.transparent,
-                          ),
-                          selectedTextStyle: TextStyle(
-                            color: Colors.transparent,
-                          ),
-                        ),
-                        calendarBuilders: CalendarBuilders<WorkoutFinish>(
-                          defaultBuilder: (context, day, focusedDay) {
-                            final events = _getEventsForDay(day, records);
+                                _showDayRecordsBottomSheet(
+                                  parentContext: context,
+                                  selectedDay: selectedDay,
+                                  selectedRecords: selectedRecords,
+                                );
+                              },
+                              onFormatChanged: (format) {
+                                setState(() {
+                                  _calendarFormat = format;
+                                });
+                              },
+                              onPageChanged: (focusedDay) {
+                                setState(() {
+                                  _focusedDay = focusedDay;
+                                });
+                              },
+                              headerStyle: const HeaderStyle(
+                                formatButtonVisible: false,
+                                titleCentered: true,
+                                headerPadding:
+                                    EdgeInsets.fromLTRB(0, 2, 0, 10),
+                                titleTextStyle: TextStyle(
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w900,
+                                  color: _primaryText,
+                                  letterSpacing: -0.4,
+                                ),
+                                leftChevronIcon: Icon(
+                                  Icons.chevron_left_rounded,
+                                  color: _primaryText,
+                                  size: 28,
+                                ),
+                                rightChevronIcon: Icon(
+                                  Icons.chevron_right_rounded,
+                                  color: _primaryText,
+                                  size: 28,
+                                ),
+                              ),
+                              daysOfWeekStyle: const DaysOfWeekStyle(
+                                weekdayStyle: TextStyle(
+                                  color: _secondaryText,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                                weekendStyle: TextStyle(
+                                  color: _secondaryText,
+                                  fontSize: 12,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                              calendarStyle: const CalendarStyle(
+                                outsideDaysVisible: false,
+                                markersMaxCount: 0,
+                                cellMargin: EdgeInsets.zero,
+                                cellPadding: EdgeInsets.zero,
+                                defaultDecoration: BoxDecoration(
+                                  color: Colors.transparent,
+                                ),
+                                weekendDecoration: BoxDecoration(
+                                  color: Colors.transparent,
+                                ),
+                                todayDecoration: BoxDecoration(
+                                  color: Colors.transparent,
+                                ),
+                                selectedDecoration: BoxDecoration(
+                                  color: Colors.transparent,
+                                ),
+                                defaultTextStyle: TextStyle(
+                                  color: Colors.transparent,
+                                ),
+                                weekendTextStyle: TextStyle(
+                                  color: Colors.transparent,
+                                ),
+                                todayTextStyle: TextStyle(
+                                  color: Colors.transparent,
+                                ),
+                                selectedTextStyle: TextStyle(
+                                  color: Colors.transparent,
+                                ),
+                              ),
+                              calendarBuilders:
+                                  CalendarBuilders<WorkoutFinish>(
+                                defaultBuilder: (context, day, focusedDay) {
+                                  final events =
+                                      _getEventsForDay(day, records);
 
-                            return _CalendarDayCell(
-                              day: day,
-                              eventsCount: events.length,
-                              isToday: isSameDay(day, DateTime.now()),
-                              isSelected: isSameDay(_selectedDay, day),
-                              cellWidth: dayCellWidth,
-                            );
-                          },
-                          todayBuilder: (context, day, focusedDay) {
-                            final events = _getEventsForDay(day, records);
+                                  return _CalendarDayCell(
+                                    day: day,
+                                    eventsCount: events.length,
+                                    isToday: isSameDay(day, DateTime.now()),
+                                    isSelected: isSameDay(_selectedDay, day),
+                                    cellWidth: dayCellWidth,
+                                  );
+                                },
+                                todayBuilder: (context, day, focusedDay) {
+                                  final events =
+                                      _getEventsForDay(day, records);
 
-                            return _CalendarDayCell(
-                              day: day,
-                              eventsCount: events.length,
-                              isToday: true,
-                              isSelected: isSameDay(_selectedDay, day),
-                              cellWidth: dayCellWidth,
-                            );
-                          },
-                          selectedBuilder: (context, day, focusedDay) {
-                            final events = _getEventsForDay(day, records);
+                                  return _CalendarDayCell(
+                                    day: day,
+                                    eventsCount: events.length,
+                                    isToday: true,
+                                    isSelected: isSameDay(_selectedDay, day),
+                                    cellWidth: dayCellWidth,
+                                  );
+                                },
+                                selectedBuilder: (context, day, focusedDay) {
+                                  final events =
+                                      _getEventsForDay(day, records);
 
-                            return _CalendarDayCell(
-                              day: day,
-                              eventsCount: events.length,
-                              isToday: isSameDay(day, DateTime.now()),
-                              isSelected: true,
-                              cellWidth: dayCellWidth,
-                            );
-                          },
-                        ),
+                                  return _CalendarDayCell(
+                                    day: day,
+                                    eventsCount: events.length,
+                                    isToday: isSameDay(day, DateTime.now()),
+                                    isSelected: true,
+                                    cellWidth: dayCellWidth,
+                                  );
+                                },
+                              ),
+                            ),
+                          ),
+                          SizedBox(height: isSmallHeight ? 12 : 16),
+                          const _CalendarInfoSection(),
+                        ],
                       ),
-                      SizedBox(height: isSmallHeight ? 12 : 16),
-                      const _CalendarInfoSection(),
-                    ],
-                  ),
-                );
-              },
+                    );
+                  },
+                ),
+              ),
             );
           },
         ),
@@ -623,14 +707,15 @@ class _MonthOverviewCard extends StatelessWidget {
             height: 44,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              color: Colors.white.withValues(alpha: 0.06),
+              color: _accent.withValues(alpha: 0.13),
               border: Border.all(
-                color: Colors.white.withValues(alpha: 0.08),
+                color: _accent.withValues(alpha: 0.25),
+                width: 0.8,
               ),
             ),
             child: const Icon(
               Icons.directions_run_rounded,
-              color: _primaryText,
+              color: _accent,
               size: 23,
             ),
           ),
@@ -672,6 +757,34 @@ class _MonthOverviewCard extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+}
+
+class _CalendarCard extends StatelessWidget {
+  final Widget child;
+
+  const _CalendarCard({
+    required this.child,
+  });
+
+  static const Color _surface = Color(0xFF0B0B0D);
+  static const Color _line = Color(0xFF242428);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(12, 12, 12, 14),
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: _line,
+          width: 0.8,
+        ),
+      ),
+      child: child,
     );
   }
 }
@@ -759,9 +872,7 @@ class _CalendarDayCell extends StatelessWidget {
                           height: dotSize,
                           margin: const EdgeInsets.symmetric(horizontal: 1.2),
                           decoration: BoxDecoration(
-                            color: isSelected
-                                ? _primaryText.withValues(alpha: 0.85)
-                                : _accent,
+                            color: isSelected ? _primaryText : _accent,
                             shape: BoxShape.circle,
                           ),
                         ),
@@ -779,16 +890,21 @@ class _CalendarDayCell extends StatelessWidget {
 class _CalendarInfoSection extends StatelessWidget {
   const _CalendarInfoSection();
 
+  static const Color _surface = Color(0xFF0B0B0D);
+  static const Color _line = Color(0xFF242428);
+  static const Color _secondaryText = Color(0xFF9B9BA1);
+  static const Color _accent = Color(0xFF5DADEC);
+
   @override
   Widget build(BuildContext context) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.fromLTRB(15, 14, 15, 14),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B0B0D),
+        color: _surface,
         borderRadius: BorderRadius.circular(18),
         border: Border.all(
-          color: const Color(0xFF242428),
+          color: _line,
           width: 0.8,
         ),
       ),
@@ -797,14 +913,14 @@ class _CalendarInfoSection extends StatelessWidget {
           Icon(
             Icons.info_outline_rounded,
             size: 19,
-            color: Color(0xFF5DADEC),
+            color: _accent,
           ),
           SizedBox(width: 10),
           Expanded(
             child: Text(
               '파란 점이 있는 날짜를 누르면 그날의 운동 기록을 볼 수 있어요.',
               style: TextStyle(
-                color: Color(0xFF9B9BA1),
+                color: _secondaryText,
                 fontSize: 13,
                 height: 1.38,
                 fontWeight: FontWeight.w600,
@@ -826,6 +942,11 @@ class _SheetSummaryBox extends StatelessWidget {
   final String label;
   final String value;
 
+  static const Color _surface = Color(0xFF0B0B0D);
+  static const Color _line = Color(0xFF242428);
+  static const Color _primaryText = Color(0xFFFFFFFF);
+  static const Color _secondaryText = Color(0xFF9B9BA1);
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -834,10 +955,10 @@ class _SheetSummaryBox extends StatelessWidget {
       ),
       padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
       decoration: BoxDecoration(
-        color: const Color(0xFF0B0B0D),
+        color: _surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: const Color(0xFF242428),
+          color: _line,
           width: 0.8,
         ),
       ),
@@ -849,7 +970,7 @@ class _SheetSummaryBox extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Color(0xFF9B9BA1),
+              color: _secondaryText,
               fontSize: 12,
               fontWeight: FontWeight.w600,
             ),
@@ -860,7 +981,7 @@ class _SheetSummaryBox extends StatelessWidget {
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-              color: Color(0xFFFFFFFF),
+              color: _primaryText,
               fontSize: 15,
               fontWeight: FontWeight.w900,
               letterSpacing: -0.25,
@@ -875,6 +996,10 @@ class _SheetSummaryBox extends StatelessWidget {
 class _BottomSheetEmptyView extends StatelessWidget {
   const _BottomSheetEmptyView();
 
+  static const Color _primaryText = Color(0xFFFFFFFF);
+  static const Color _secondaryText = Color(0xFF9B9BA1);
+  static const Color _accent = Color(0xFF5DADEC);
+
   @override
   Widget build(BuildContext context) {
     return const Center(
@@ -886,7 +1011,7 @@ class _BottomSheetEmptyView extends StatelessWidget {
           children: [
             Icon(
               Icons.directions_run_outlined,
-              color: Color(0xFF5DADEC),
+              color: _accent,
               size: 42,
             ),
             SizedBox(height: 14),
@@ -895,7 +1020,7 @@ class _BottomSheetEmptyView extends StatelessWidget {
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: TextStyle(
-                color: Color(0xFFFFFFFF),
+                color: _primaryText,
                 fontSize: 17,
                 fontWeight: FontWeight.w900,
               ),
@@ -905,7 +1030,7 @@ class _BottomSheetEmptyView extends StatelessWidget {
               '이 날짜에는 저장된 운동 기록이 없습니다.',
               textAlign: TextAlign.center,
               style: TextStyle(
-                color: Color(0xFF9B9BA1),
+                color: _secondaryText,
                 fontSize: 13.5,
                 height: 1.45,
                 fontWeight: FontWeight.w500,
@@ -933,6 +1058,11 @@ class _WorkoutRecordTile extends StatelessWidget {
   final String speed;
   final String pace;
 
+  static const Color _primaryText = Color(0xFFFFFFFF);
+  static const Color _secondaryText = Color(0xFF9B9BA1);
+  static const Color _softText = Color(0xFF66666D);
+  static const Color _accent = Color(0xFF5DADEC);
+
   @override
   Widget build(BuildContext context) {
     return Padding(
@@ -944,22 +1074,15 @@ class _WorkoutRecordTile extends StatelessWidget {
             height: 48,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: LinearGradient(
-                colors: [
-                  const Color(0xFF5DADEC).withValues(alpha: 0.28),
-                  const Color(0xFF5DADEC).withValues(alpha: 0.06),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
+              color: _accent.withValues(alpha: 0.13),
               border: Border.all(
-                color: const Color(0xFF5DADEC).withValues(alpha: 0.22),
-                width: 1,
+                color: _accent.withValues(alpha: 0.25),
+                width: 0.8,
               ),
             ),
             child: const Icon(
               Icons.directions_run_rounded,
-              color: Color(0xFFFFFFFF),
+              color: _accent,
               size: 22,
             ),
           ),
@@ -975,7 +1098,7 @@ class _WorkoutRecordTile extends StatelessWidget {
                   style: const TextStyle(
                     fontSize: 15.5,
                     fontWeight: FontWeight.w900,
-                    color: Color(0xFFFFFFFF),
+                    color: _primaryText,
                     letterSpacing: -0.25,
                   ),
                 ),
@@ -986,7 +1109,7 @@ class _WorkoutRecordTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 13,
-                    color: Color(0xFF9B9BA1),
+                    color: _secondaryText,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -997,7 +1120,7 @@ class _WorkoutRecordTile extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 12.5,
-                    color: Color(0xFF66666D),
+                    color: _softText,
                     fontWeight: FontWeight.w500,
                   ),
                 ),
@@ -1007,10 +1130,95 @@ class _WorkoutRecordTile extends StatelessWidget {
           const SizedBox(width: 6),
           const Icon(
             Icons.chevron_right_rounded,
-            color: Color(0xFF9B9BA1),
+            color: _secondaryText,
             size: 23,
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _StateMessage extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String message;
+
+  const _StateMessage({
+    required this.icon,
+    required this.title,
+    required this.message,
+  });
+
+  static const Color _surface = Color(0xFF0B0B0D);
+  static const Color _line = Color(0xFF242428);
+  static const Color _primaryText = Color(0xFFFFFFFF);
+  static const Color _secondaryText = Color(0xFF9B9BA1);
+  static const Color _accent = Color(0xFF5DADEC);
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final maxWidth = math.min(media.size.width - 32, 420.0);
+
+    return Center(
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: maxWidth,
+        ),
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          padding: const EdgeInsets.fromLTRB(20, 22, 20, 22),
+          decoration: BoxDecoration(
+            color: _surface,
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(
+              color: _line,
+              width: 0.8,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 54,
+                height: 54,
+                decoration: BoxDecoration(
+                  color: _accent.withValues(alpha: 0.13),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  icon,
+                  color: _accent,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(height: 14),
+              Text(
+                title,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _primaryText,
+                  fontSize: 17,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.3,
+                ),
+              ),
+              const SizedBox(height: 7),
+              Text(
+                message,
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _secondaryText,
+                  fontSize: 13.5,
+                  height: 1.45,
+                  fontWeight: FontWeight.w500,
+                  letterSpacing: -0.05,
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }

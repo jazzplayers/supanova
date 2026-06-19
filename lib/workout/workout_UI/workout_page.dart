@@ -669,7 +669,7 @@ class _WorkoutMapSheetState extends ConsumerState<_WorkoutMapSheet> {
 
   static const double _defaultZoom = 17;
 
-  static const Color _bg = Color(0xFF000000);
+  // static const Color _bg = Color(0xFF000000);
   static const Color _surface = Color(0xFF0B0B0D);
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);

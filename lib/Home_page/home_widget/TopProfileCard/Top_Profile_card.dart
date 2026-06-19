@@ -107,7 +107,7 @@ class _TopProfileCardState extends ConsumerState<TopProfileCard> {
       isDismissible: true,
       enableDrag: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.68),
+      barrierColor: Colors.black.withAlpha(180),
       builder: (sheetContext) {
         final media = MediaQuery.of(sheetContext);
 
@@ -271,7 +271,7 @@ class _TopProfileCardState extends ConsumerState<TopProfileCard> {
       context: context,
       barrierDismissible: true,
       barrierLabel: '프로필 사진 닫기',
-      barrierColor: Colors.black.withOpacity(0.92),
+      barrierColor: Colors.black.withAlpha(235),
       transitionDuration: const Duration(milliseconds: 180),
       pageBuilder: (dialogContext, animation, secondaryAnimation) {
         return _ProfileImageViewer(
@@ -316,7 +316,7 @@ class _TopProfileCardState extends ConsumerState<TopProfileCard> {
       isDismissible: true,
       enableDrag: true,
       backgroundColor: Colors.transparent,
-      barrierColor: Colors.black.withOpacity(0.68),
+      barrierColor: Colors.black.withAlpha(173),
       builder: (sheetContext) {
         return _EditProfileSheet(
           userId: widget.userId,
@@ -482,7 +482,6 @@ class _TopProfileCardState extends ConsumerState<TopProfileCard> {
                     ),
                     child: _ProfileNameBlock(
                       displayName: user.displayName,
-                      email: user.email,
                     ),
                   ),
                   const SizedBox(height: 14),
@@ -580,7 +579,7 @@ class _ProfileAvatar extends StatelessWidget {
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
                   border: Border.all(
-                    color: _accent.withOpacity(0.9),
+                    color: _accent.withAlpha(230),
                     width: 1.8,
                   ),
                 ),
@@ -606,7 +605,7 @@ class _ProfileAvatar extends StatelessWidget {
           Positioned.fill(
             child: IgnorePointer(
               child: CircleAvatar(
-                backgroundColor: Colors.black.withOpacity(0.52),
+                backgroundColor: Colors.black.withAlpha(133),
                 child: const SizedBox(
                   width: 18,
                   height: 18,
@@ -637,7 +636,7 @@ class _ProfileAvatar extends StatelessWidget {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.35),
+                      color: Colors.black.withAlpha(89),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -747,7 +746,7 @@ class _ProfileImageViewer extends StatelessWidget {
                             ),
                             boxShadow: [
                               BoxShadow(
-                                color: Colors.black.withOpacity(0.45),
+                                color: Colors.black.withAlpha(115),
                                 blurRadius: 28,
                                 offset: const Offset(0, 12),
                               ),
@@ -891,14 +890,11 @@ class _ProfileStatsRow extends StatelessWidget {
 class _ProfileNameBlock extends StatelessWidget {
   const _ProfileNameBlock({
     required this.displayName,
-    required this.email,
   });
 
   final String displayName;
-  final String email;
 
   static const Color _primaryText = Color(0xFFFFFFFF);
-  static const Color _secondaryText = Color(0xFF9B9BA1);
 
   @override
   Widget build(BuildContext context) {
@@ -917,17 +913,6 @@ class _ProfileNameBlock extends StatelessWidget {
           ),
         ),
         const SizedBox(height: 4),
-        Text(
-          email,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: const TextStyle(
-            fontSize: 13,
-            color: _secondaryText,
-            height: 1.25,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
       ],
     );
   }
@@ -1194,7 +1179,7 @@ class _EditProfileSheetState extends ConsumerState<_EditProfileSheet> {
                   width: 52,
                   height: 52,
                   decoration: BoxDecoration(
-                    color: _accent.withOpacity(0.13),
+                    color: _accent.withAlpha(33),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(
@@ -1431,62 +1416,65 @@ class _SheetActionTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return InkWell(
+    return Material(
+      color: _surfaceSoft,
       borderRadius: BorderRadius.circular(14),
-      onTap: onTap,
-      child: Container(
-        width: double.infinity,
-        padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
-        decoration: BoxDecoration(
-          color: _surfaceSoft,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: _line,
-            width: 0.8,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: onTap,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: _line,
+              width: 0.8,
+            ),
           ),
-        ),
-        child: Row(
-          children: [
-            Icon(
-              icon,
-              color: _primaryText,
-              size: 23,
-            ),
-            const SizedBox(width: 13),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    title,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _primaryText,
-                      fontSize: 14.5,
-                      fontWeight: FontWeight.w800,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    subtitle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _secondaryText,
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                    ),
-                  ),
-                ],
+          child: Row(
+            children: [
+              Icon(
+                icon,
+                color: _primaryText,
+                size: 23,
               ),
-            ),
-            const Icon(
-              Icons.chevron_right_rounded,
-              color: _secondaryText,
-              size: 22,
-            ),
-          ],
+              const SizedBox(width: 13),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _primaryText,
+                        fontSize: 14.5,
+                        fontWeight: FontWeight.w800,
+                      ),
+                    ),
+                    const SizedBox(height: 3),
+                    Text(
+                      subtitle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: _secondaryText,
+                        fontSize: 12.5,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const Icon(
+                Icons.chevron_right_rounded,
+                color: _secondaryText,
+                size: 22,
+              ),
+            ],
+          ),
         ),
       ),
     );

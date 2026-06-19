@@ -11,13 +11,8 @@ class RunRankingScreen extends ConsumerWidget {
   const RunRankingScreen({super.key});
 
   static const Color _bg = Color(0xFF000000);
-  static const Color _surface = Color(0xFF0B0B0D);
-  static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
-  static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _softText = Color(0xFF66666D);
-  static const Color _accent = Color(0xFF5DADEC);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,9 +23,12 @@ class RunRankingScreen extends ConsumerWidget {
         appBar: AppBar(
           backgroundColor: _bg,
           surfaceTintColor: Colors.transparent,
+          shadowColor: Colors.transparent,
           elevation: 0,
+          scrolledUnderElevation: 0,
           centerTitle: true,
           toolbarHeight: 52,
+          automaticallyImplyLeading: false,
           title: const Text(
             '러닝 랭킹',
             maxLines: 1,
@@ -77,7 +75,6 @@ class _RankingTabBar extends StatelessWidget {
 
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _accent = Color(0xFF5DADEC);
 
   @override
   Widget build(BuildContext context) {
@@ -121,9 +118,36 @@ class _RankingList extends ConsumerWidget {
     required this.type,
   });
 
-  static const Color _bg = Color(0xFF000000);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
+  static const Color _surface = Color(0xFF0B0B0D);
+
+  ScrollPhysics _listPhysics(BuildContext context) {
+    final platform = Theme.of(context).platform;
+
+    if (platform == TargetPlatform.iOS) {
+      return const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
+      );
+    }
+
+    return const AlwaysScrollableScrollPhysics(
+      parent: ClampingScrollPhysics(),
+    );
+  }
+
+  Future<void> _refresh(WidgetRef ref) async {
+    switch (type) {
+      case _RankingType.monthly:
+        ref.invalidate(monthlyRunRankingProvider);
+        break;
+      case _RankingType.total:
+        ref.invalidate(totalRunRankingProvider);
+        break;
+    }
+
+    await Future<void>.delayed(const Duration(milliseconds: 250));
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -134,70 +158,89 @@ class _RankingList extends ConsumerWidget {
       _RankingType.total => ref.watch(totalRunRankingProvider),
     };
 
-    return rankingAsync.when(
-      data: (rankings) {
-        if (rankings.isEmpty) {
-          return const _EmptyRankingView();
-        }
-
-        return ListView.separated(
-          padding: EdgeInsets.fromLTRB(
-            0,
-            8,
-            0,
-            24 + media.padding.bottom,
-          ),
-          itemCount: rankings.length,
-          separatorBuilder: (_, __) => const Divider(
-            color: Color(0xFF242428),
-            height: 0.7,
-            thickness: 0.7,
-            indent: 86,
-          ),
-          itemBuilder: (context, index) {
-            final ranking = rankings[index];
-            final rank = index + 1;
-
-            return _RankingTile(
-              ranking: ranking,
-              rank: rank,
+    return RefreshIndicator(
+      color: _primaryText,
+      backgroundColor: _surface,
+      displacement: 24,
+      onRefresh: () => _refresh(ref),
+      child: rankingAsync.when(
+        data: (rankings) {
+          if (rankings.isEmpty) {
+            return _EmptyRankingView(
+              physics: _listPhysics(context),
             );
-          },
-        );
-      },
-      loading: () => const Center(
-        child: CircularProgressIndicator(
-          color: _primaryText,
-          strokeWidth: 2,
-        ),
-      ),
-      error: (error, stackTrace) {
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (!context.mounted) return;
+          }
 
-          showAppSnackBar(
-            context,
-            message: '랭킹을 불러오지 못했습니다.',
-            icon: Icons.error_rounded,
-            isError: true,
+          return ListView.separated(
+            keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+            physics: _listPhysics(context),
+            padding: EdgeInsets.fromLTRB(
+              0,
+              8,
+              0,
+              28 + media.padding.bottom,
+            ),
+            itemCount: rankings.length,
+            separatorBuilder: (_, __) => const Divider(
+              color: Color(0xFF242428),
+              height: 0.7,
+              thickness: 0.7,
+              indent: 86,
+            ),
+            itemBuilder: (context, index) {
+              final ranking = rankings[index];
+              final rank = index + 1;
+
+              return _RankingTile(
+                ranking: ranking,
+                rank: rank,
+              );
+            },
           );
-        });
-
-        return const Center(
-          child: Padding(
-            padding: EdgeInsets.all(24),
-            child: Text(
-              '랭킹을 불러오지 못했습니다.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: _secondaryText,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
+        },
+        loading: () => ListView(
+          physics: _listPhysics(context),
+          padding: EdgeInsets.only(
+            top: media.size.height * 0.28,
+            bottom: 28 + media.padding.bottom,
+          ),
+          children: const [
+            Center(
+              child: CircularProgressIndicator(
+                color: _primaryText,
+                strokeWidth: 2,
               ),
             ),
-          ),
-        );
-      },
+          ],
+        ),
+        error: (error, stackTrace) {
+          debugPrint('RunRankingScreen ranking error: $error');
+          debugPrint('RunRankingScreen ranking stackTrace: $stackTrace');
+
+          return ListView(
+            physics: _listPhysics(context),
+            padding: EdgeInsets.fromLTRB(
+              24,
+              media.size.height * 0.22,
+              24,
+              28 + media.padding.bottom,
+            ),
+            children: const [
+              Center(
+                child: Text(
+                  '랭킹을 불러오지 못했습니다.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: _secondaryText,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -212,100 +255,78 @@ class _RankingTile extends ConsumerWidget {
   });
 
   static const Color _bg = Color(0xFF000000);
-  static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _softText = Color(0xFF66666D);
-  static const Color _accent = Color(0xFF5DADEC);
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final distanceKm = ranking.distanceMeters / 1000;
     final userAsync = ref.watch(userAuthDataProvider(ranking.userId));
 
-    return InkWell(
-      onTap: () {
-        if (ranking.userId.isEmpty) {
-          showAppSnackBar(
-            context,
-            message: '사용자 정보를 열 수 없습니다.',
-            icon: Icons.error_rounded,
-            isError: true,
-          );
-          return;
-        }
+    final horizontalPadding = MediaQuery.sizeOf(context).width < 360 ? 14.0 : 16.0;
 
-        context.push('/user/${ranking.userId}');
-      },
-      child: Padding(
-        padding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 11,
-        ),
-        child: Row(
-          children: [
-            _RankBadge(rank: rank),
-            const SizedBox(width: 13),
-            userAsync.when(
-              data: (user) {
-                final profileImageUrl = user?.profileImageUrl;
-                final hasProfileImage =
-                    profileImageUrl != null && profileImageUrl.isNotEmpty;
+    return Material(
+      color: _bg,
+      child: InkWell(
+        onTap: () {
+          if (ranking.userId.isEmpty) {
+            showAppSnackBar(
+              context,
+              message: '사용자 정보를 열 수 없습니다.',
+              icon: Icons.error_rounded,
+              isError: true,
+            );
+            return;
+          }
 
-                return CircleAvatar(
-                  radius: 23,
-                  backgroundColor: _surfaceSoft,
-                  backgroundImage:
-                      hasProfileImage ? NetworkImage(profileImageUrl) : null,
-                  child: !hasProfileImage
-                      ? const Icon(
-                          Icons.person_rounded,
-                          color: _secondaryText,
-                          size: 24,
-                        )
-                      : null,
-                );
-              },
-              loading: () => const CircleAvatar(
-                radius: 23,
-                backgroundColor: _surfaceSoft,
-                child: SizedBox(
-                  width: 14,
-                  height: 14,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: _accent,
-                  ),
+          FocusManager.instance.primaryFocus?.unfocus();
+          context.push('/user/${ranking.userId}');
+        },
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: horizontalPadding,
+            vertical: 11,
+          ),
+          child: Row(
+            children: [
+              _RankBadge(rank: rank),
+              const SizedBox(width: 13),
+              userAsync.when(
+                data: (user) {
+                  final rawProfileImageUrl = user?.profileImageUrl;
+                  final profileImageUrl = rawProfileImageUrl is String
+                      ? rawProfileImageUrl.trim()
+                      : null;
+
+                  return _RankingAvatar(
+                    profileImageUrl: profileImageUrl,
+                  );
+                },
+                loading: () => const _RankingAvatar(
+                  isLoading: true,
+                ),
+                error: (e, st) => const _RankingAvatar(),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: _UserRankingInfo(
+                  userAsync: userAsync,
+                  ranking: ranking,
                 ),
               ),
-              error: (e, st) => const CircleAvatar(
-                radius: 23,
-                backgroundColor: _surfaceSoft,
-                child: Icon(
-                  Icons.person_rounded,
-                  color: _secondaryText,
-                  size: 24,
-                ),
-              ),
-            ),
-            const SizedBox(width: 12),
-            Expanded(
-              child: _UserRankingInfo(
-                userAsync: userAsync,
-                ranking: ranking,
-              ),
-            ),
-            const SizedBox(width: 10),
-            _DistanceBlock(distanceKm: distanceKm),
-          ],
+              const SizedBox(width: 10),
+              _DistanceBlock(distanceKm: distanceKm),
+            ],
+          ),
         ),
       ),
     );
   }
 
   static String formatSeconds(int seconds) {
-    final hours = seconds ~/ 3600;
-    final minutes = (seconds % 3600) ~/ 60;
+    final safeSeconds = seconds < 0 ? 0 : seconds;
+    final hours = safeSeconds ~/ 3600;
+    final minutes = (safeSeconds % 3600) ~/ 60;
 
     if (hours > 0) {
       if (minutes == 0) {
@@ -316,6 +337,80 @@ class _RankingTile extends ConsumerWidget {
     }
 
     return '$minutes분';
+  }
+}
+
+class _RankingAvatar extends StatelessWidget {
+  final String? profileImageUrl;
+  final bool isLoading;
+
+  const _RankingAvatar({
+    this.profileImageUrl,
+    this.isLoading = false,
+  });
+
+  static const Color _surfaceSoft = Color(0xFF121216);
+  static const Color _secondaryText = Color(0xFF9B9BA1);
+  static const Color _accent = Color(0xFF5DADEC);
+
+  @override
+  Widget build(BuildContext context) {
+    final hasProfileImage =
+        profileImageUrl != null && profileImageUrl!.isNotEmpty;
+
+    return SizedBox(
+      width: 46,
+      height: 46,
+      child: ClipOval(
+        child: ColoredBox(
+          color: _surfaceSoft,
+          child: isLoading
+              ? const Center(
+                  child: SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: _accent,
+                    ),
+                  ),
+                )
+              : hasProfileImage
+                  ? Image.network(
+                      profileImageUrl!,
+                      fit: BoxFit.cover,
+                      width: 46,
+                      height: 46,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(
+                          Icons.person_rounded,
+                          color: _secondaryText,
+                          size: 24,
+                        );
+                      },
+                      loadingBuilder: (context, child, loadingProgress) {
+                        if (loadingProgress == null) return child;
+
+                        return const Center(
+                          child: SizedBox(
+                            width: 14,
+                            height: 14,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: _accent,
+                            ),
+                          ),
+                        );
+                      },
+                    )
+                  : const Icon(
+                      Icons.person_rounded,
+                      color: _secondaryText,
+                      size: 24,
+                    ),
+        ),
+      ),
+    );
   }
 }
 
@@ -338,7 +433,11 @@ class _UserRankingInfo extends StatelessWidget {
       children: [
         userAsync.when(
           data: (user) {
-            final displayName = user?.displayName ?? '사용자';
+            final rawDisplayName = user?.displayName;
+            final displayName =
+                rawDisplayName is String && rawDisplayName.trim().isNotEmpty
+                    ? rawDisplayName.trim()
+                    : '사용자';
 
             return Text(
               displayName,
@@ -401,6 +500,11 @@ class _DistanceBlock extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final safeDistanceKm =
+        distanceKm.isNaN || distanceKm.isInfinite || distanceKm < 0
+            ? 0.0
+            : distanceKm;
+
     return ConstrainedBox(
       constraints: const BoxConstraints(
         minWidth: 56,
@@ -413,7 +517,7 @@ class _DistanceBlock extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.end,
           children: [
             Text(
-              distanceKm.toStringAsFixed(2),
+              safeDistanceKm.toStringAsFixed(2),
               maxLines: 1,
               style: const TextStyle(
                 color: _primaryText,
@@ -447,12 +551,7 @@ class _RankBadge extends StatelessWidget {
     required this.rank,
   });
 
-  static const Color _surfaceSoft = Color(0xFF121216);
-  static const Color _line = Color(0xFF242428);
-  static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _gold = Color(0xFFFFB74D);
-  static const Color _bronze = Color(0xFFCD7F32);
 
   @override
   Widget build(BuildContext context) {
@@ -510,7 +609,11 @@ class _RankBadge extends StatelessWidget {
 }
 
 class _EmptyRankingView extends StatelessWidget {
-  const _EmptyRankingView();
+  final ScrollPhysics physics;
+
+  const _EmptyRankingView({
+    required this.physics,
+  });
 
   static const Color _surface = Color(0xFF0B0B0D);
   static const Color _line = Color(0xFF242428);
@@ -523,11 +626,12 @@ class _EmptyRankingView extends StatelessWidget {
     final media = MediaQuery.of(context);
 
     return ListView(
+      physics: physics,
       padding: EdgeInsets.fromLTRB(
         16,
         80,
         16,
-        24 + media.padding.bottom,
+        28 + media.padding.bottom,
       ),
       children: [
         Container(

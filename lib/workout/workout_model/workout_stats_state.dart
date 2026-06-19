@@ -26,47 +26,84 @@ abstract class WorkoutStatsState with _$WorkoutStatsState {
       _$WorkoutStatsStateFromJson(json);
 }
 
-/// LatLngConverter는 LatLng 객체를 JSON으로 변환하거나 JSON에서 LatLng 객체로 변환하는 역할을 합니다.
-/// 좌표 하나를 반환하는것
 class LatLngConverter implements JsonConverter<LatLng, Map<String, dynamic>> {
   const LatLngConverter();
 
   @override
   LatLng fromJson(Map<String, dynamic> json) {
-    return LatLng(
-      (json['lat'] as num).toDouble(),
-      (json['lng'] as num).toDouble(),
-    );
+    final lat = _toDouble(json['lat']);
+    final lng = _toDouble(json['lng']);
+
+    return LatLng(lat, lng);
   }
 
   @override
-  Map<String, dynamic> toJson(LatLng object) => {
-        'lat': object.latitude,
-        'lng': object.longitude,
-      };
-}
+  Map<String, dynamic> toJson(LatLng object) {
+    return {
+      'lat': object.latitude,
+      'lng': object.longitude,
+    };
+  }
 
-///LatLngListConverter는 LatLng 객체의 리스트를 JSON으로 변환하거나 JSON에서 LatLng 객체의 리스트로 변환하는 역할을 합니다.
-/// 내부적으로 LatLngConverter를 사용하여 각 LatLng 객체를 처리합니다.
-/// List<LatLng>를 List<dynamic>으로 변환하거나 그 반대로 변환하는데 사용됩니다.
-/// List<LatLng> routePoints = [LatLng(37.7749, -122.4194), LatLng(34.0522, -118.2437)];
-/// List<dynamic> 
-/// [
-///  {'lat': 37.7749, 'lng': -122.4194},
-///  {'lat': 34.0522, 'lng': -118.2437}
-/// ]
+  static double _toDouble(dynamic value) {
+    if (value is num) {
+      return value.toDouble();
+    }
+
+    if (value is String) {
+      return double.tryParse(value) ?? 0.0;
+    }
+
+    return 0.0;
+  }
+}
 
 class LatLngListConverter
     implements JsonConverter<List<LatLng>, List<dynamic>> {
   const LatLngListConverter();
 
-  static const _single = LatLngConverter();
+  static const LatLngConverter _single = LatLngConverter();
 
   @override
-  List<LatLng> fromJson(List<dynamic> json) =>
-      json.map((e) => _single.fromJson(Map<String, dynamic>.from(e as Map))).toList();
+  List<LatLng> fromJson(List<dynamic> json) {
+    final points = <LatLng>[];
 
-  @override
-  List<dynamic> toJson(List<LatLng> object) =>
-      object.map((e) => _single.toJson(e)).toList();
+    for (final item in json) {
+      if (item is! Map) continue;
+
+      final map = Map<String, dynamic>.from(item);
+
+      final hasLat = map.containsKey('lat');
+      final hasLng = map.containsKey('lng');
+
+      if (!hasLat || !hasLng) continue;
+
+      final point = _single.fromJson(map);
+
+      if (point.latitude.isNaN ||
+          point.latitude.isInfinite ||
+          point.longitude.isNaN ||
+          point.longitude.isInfinite) {
+        continue;
+      }
+
+      points.add(point);
     }
+
+    return points;
+  }
+
+  @override
+  List<dynamic> toJson(List<LatLng> object) {
+    return object
+        .where(
+          (point) =>
+              !point.latitude.isNaN &&
+              !point.latitude.isInfinite &&
+              !point.longitude.isNaN &&
+              !point.longitude.isInfinite,
+        )
+        .map(_single.toJson)
+        .toList();
+  }
+}

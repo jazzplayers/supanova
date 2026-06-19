@@ -16,12 +16,8 @@ _Auth _$AuthFromJson(Map<String, dynamic> json) => _Auth(
   followingsCount: (json['followingsCount'] as num?)?.toInt() ?? 0,
   totalDistance: (json['totalDistance'] as num?)?.toDouble() ?? 0.0,
   isPrivate: json['isPrivate'] as bool? ?? false,
-  createdAt: const DateTimeConverter().fromJson(
-    json['createdAt'] as Timestamp?,
-  ),
-  updatedAt: const DateTimeConverter().fromJson(
-    json['updatedAt'] as Timestamp?,
-  ),
+  createdAt: const DateTimeConverter().fromJson(json['createdAt']),
+  updatedAt: const DateTimeConverter().fromJson(json['updatedAt']),
   bio: json['bio'] as String? ?? '',
   profileImageUrl: json['profileImageUrl'] as String? ?? '',
 );

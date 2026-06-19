@@ -27,7 +27,7 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
   static const Color _primaryText = Color(0xFFF5F7FA);
   static const Color _secondaryText = Color(0xFF9CA3AF);
   static const Color _blue = Color(0xFF5DADEC);
-  static const Color _danger = Color(0xFFFF5A5F);
+  // static const Color _danger = Color(0xFFFF5A5F);
 
   final ImagePicker _picker = ImagePicker();
 

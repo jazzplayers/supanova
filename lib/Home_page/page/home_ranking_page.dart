@@ -13,13 +13,13 @@ class HomeRanking extends ConsumerWidget {
     required this.userId,
   });
 
-  static const Color _bg = Color(0xFF000000);
-  static const Color _surface = Color(0xFF0B0B0D);
-  static const Color _surfaceSoft = Color(0xFF121216);
-  static const Color _line = Color(0xFF242428);
-  static const Color _primaryText = Color(0xFFFFFFFF);
-  static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _softText = Color(0xFF66666D);
+  // static const Color _bg = Color(0xFF000000);
+  // static const Color _surface = Color(0xFF0B0B0D);
+  // static const Color _surfaceSoft = Color(0xFF121216);
+  // static const Color _line = Color(0xFF242428);
+  // static const Color _primaryText = Color(0xFFFFFFFF);
+  // static const Color _secondaryText = Color(0xFF9B9BA1);
+  // static const Color _softText = Color(0xFF66666D);
   static const Color _accent = Color(0xFF5DADEC);
   static const Color _gold = Color(0xFFFFB74D);
 
@@ -151,11 +151,11 @@ class _MyRankingTile extends StatelessWidget {
     required this.rankAsync,
   });
 
-  static const Color _surfaceSoft = Color(0xFF121216);
+  // static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _softText = Color(0xFF66666D);
+  // static const Color _softText = Color(0xFF66666D);
 
   @override
   Widget build(BuildContext context) {

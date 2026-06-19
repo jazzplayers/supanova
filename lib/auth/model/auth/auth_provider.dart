@@ -1,6 +1,7 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:home_function/auth/model/auth/auth_repository.dart';
-import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:home_function/core/firebase.dart';
+import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 import 'auth.dart';
 
@@ -12,6 +13,15 @@ UserAuthRepository userAuthRepository(Ref ref) {
   final db = ref.read(firestoreProvider);
 
   return UserAuthRepositoryImpl(auth, db);
+}
+
+/// Firebase Auth 로그인 상태 감지용
+/// UserAuthRepositoryImpl 안의 _ensureUserFields()가 여기서도 실행됨.
+@riverpod
+Stream<User?> userAuthStateChanges(Ref ref) {
+  final authRepo = ref.read(userAuthRepositoryProvider);
+
+  return authRepo.userAuthStateChanges();
 }
 
 @riverpod
@@ -26,6 +36,9 @@ Future<void> userSignOut(Ref ref) async {
   final authRepo = ref.read(userAuthRepositoryProvider);
 
   await authRepo.userSignOut();
+
+  ref.invalidate(myUidProvider);
+  ref.invalidate(userAuthStateChangesProvider);
 }
 
 @riverpod
@@ -33,6 +46,9 @@ Future<void> deleteAccount(Ref ref) async {
   final authRepo = ref.read(userAuthRepositoryProvider);
 
   await authRepo.deleteAccount();
+
+  ref.invalidate(myUidProvider);
+  ref.invalidate(userAuthStateChangesProvider);
 }
 
 @riverpod
@@ -48,6 +64,7 @@ Future<void> updateUserData(
   required String uid,
   String? displayName,
   String? profileImageUrl,
+  String? bio,
 }) async {
   final authRepo = ref.read(userAuthRepositoryProvider);
 
@@ -55,6 +72,7 @@ Future<void> updateUserData(
     uid: uid,
     displayName: displayName,
     profileImageUrl: profileImageUrl,
+    bio: bio,
   );
 }
 
@@ -70,4 +88,7 @@ Future<void> signInWithGoogle(Ref ref) async {
   final authRepo = ref.read(userAuthRepositoryProvider);
 
   await authRepo.signInWithGoogle();
-}   
+
+  ref.invalidate(myUidProvider);
+  ref.invalidate(userAuthStateChangesProvider);
+}

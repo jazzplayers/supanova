@@ -1,4 +1,7 @@
+import 'dart:math' as math;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -30,6 +33,7 @@ abstract class UserAuthRepository {
     required String uid,
     String? displayName,
     String? profileImageUrl,
+    String? bio,
   });
 
   Future<bool> isDisplayNameAvailable(String displayName);
@@ -49,8 +53,41 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
     return value.trim().toLowerCase();
   }
 
-  String _googleTempDisplayName(String uid) {
-    return 'user_${uid.substring(0, 15)}';
+  String _safeUidPart(String uid) {
+    final cleaned = uid.toLowerCase().replaceAll(
+          RegExp(r'[^a-z0-9]'),
+          '',
+        );
+
+    if (cleaned.isEmpty) {
+      return 'user';
+    }
+
+    return cleaned;
+  }
+
+  String _googleTempDisplayName(
+    String uid, {
+    int attempt = 0,
+  }) {
+    final safeUid = _safeUidPart(uid);
+
+    if (attempt == 0) {
+      final maxUidLength = 20 - 'user_'.length;
+      final end = math.min(safeUid.length, maxUidLength);
+      return 'user_${safeUid.substring(0, end)}';
+    }
+
+    final suffix = attempt.toString().padLeft(2, '0');
+    final maxUidLength = 20 - 'user_'.length - suffix.length;
+    final end = math.min(safeUid.length, maxUidLength);
+
+    return 'user_${safeUid.substring(0, end)}$suffix';
+  }
+
+  bool _isValidDisplayNameValue(String value) {
+    final trimmed = value.trim();
+    return trimmed.isNotEmpty && trimmed.length <= 20;
   }
 
   bool _isSameAsGooglePhoto({
@@ -65,6 +102,219 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
     }
 
     return saved == google;
+  }
+
+  Future<_ReservedDisplayName> _reserveDisplayNameInTransaction({
+    required Transaction tx,
+    required String uid,
+    String? preferredDisplayName,
+  }) async {
+    final preferred = preferredDisplayName?.trim() ?? '';
+
+    if (_isValidDisplayNameValue(preferred)) {
+      final preferredKey = _normalizeDisplayName(preferred);
+      final preferredRef = _db.collection('displayNames').doc(preferredKey);
+      final preferredDoc = await tx.get(preferredRef);
+
+      if (!preferredDoc.exists) {
+        return _ReservedDisplayName(
+          displayName: preferred,
+          displayNameKey: preferredKey,
+          ref: preferredRef,
+          shouldCreateDisplayNameDoc: true,
+        );
+      }
+
+      final data = preferredDoc.data() as Map<String, dynamic>?;
+      final ownerUid = data?['uid'] as String?;
+
+      if (ownerUid == uid) {
+        return _ReservedDisplayName(
+          displayName: preferred,
+          displayNameKey: preferredKey,
+          ref: preferredRef,
+          shouldCreateDisplayNameDoc: false,
+        );
+      }
+    }
+
+    for (int attempt = 0; attempt < 100; attempt++) {
+      final tempDisplayName = _googleTempDisplayName(
+        uid,
+        attempt: attempt,
+      );
+      final tempDisplayNameKey = _normalizeDisplayName(tempDisplayName);
+      final tempRef = _db.collection('displayNames').doc(tempDisplayNameKey);
+      final tempDoc = await tx.get(tempRef);
+
+      if (!tempDoc.exists) {
+        return _ReservedDisplayName(
+          displayName: tempDisplayName,
+          displayNameKey: tempDisplayNameKey,
+          ref: tempRef,
+          shouldCreateDisplayNameDoc: true,
+        );
+      }
+
+      final data = tempDoc.data() as Map<String, dynamic>?;
+      final ownerUid = data?['uid'] as String?;
+
+      if (ownerUid == uid) {
+        return _ReservedDisplayName(
+          displayName: tempDisplayName,
+          displayNameKey: tempDisplayNameKey,
+          ref: tempRef,
+          shouldCreateDisplayNameDoc: false,
+        );
+      }
+    }
+
+    throw Exception('사용 가능한 임시 닉네임을 만들지 못했습니다.');
+  }
+
+  Map<String, dynamic> _defaultUserCreateData({
+    required User user,
+    required String displayName,
+    required String displayNameKey,
+  }) {
+    return {
+      'uid': user.uid,
+      'email': user.email ?? '',
+      'displayName': displayName,
+      'displayNameKey': displayNameKey,
+      'profileImageUrl': '',
+      'bio': '',
+      'workoutCount': 0,
+      'followersCount': 0,
+      'followingsCount': 0,
+      'totalDistance': 0.0,
+      'isPrivate': false,
+      'createdAt': FieldValue.serverTimestamp(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    };
+  }
+
+  Map<String, dynamic> _missingUserFieldUpdates({
+    required String uid,
+    required Map<String, dynamic> data,
+    required String email,
+  }) {
+    final updates = <String, dynamic>{};
+
+    if (!data.containsKey('uid')) {
+      updates['uid'] = uid;
+    }
+
+    if (!data.containsKey('email')) {
+      updates['email'] = email;
+    }
+
+    if (!data.containsKey('workoutCount')) {
+      updates['workoutCount'] = 0;
+    }
+
+    if (!data.containsKey('followersCount')) {
+      updates['followersCount'] = 0;
+    }
+
+    if (!data.containsKey('followingsCount')) {
+      updates['followingsCount'] = 0;
+    }
+
+    if (!data.containsKey('totalDistance')) {
+      updates['totalDistance'] = 0.0;
+    }
+
+    if (!data.containsKey('isPrivate')) {
+      updates['isPrivate'] = false;
+    }
+
+    if (!data.containsKey('bio')) {
+      updates['bio'] = '';
+    }
+
+    if (!data.containsKey('profileImageUrl')) {
+      updates['profileImageUrl'] = '';
+    }
+
+    if (!data.containsKey('createdAt')) {
+      updates['createdAt'] = FieldValue.serverTimestamp();
+    }
+
+    return updates;
+  }
+
+  Future<String> _ensureUserFields(String uid) async {
+    final currentUser = _auth.currentUser;
+    final userRef = _db.collection('users').doc(uid);
+
+    String displayNameToSet = '';
+
+    await _db.runTransaction((tx) async {
+      final userDoc = await tx.get(userRef);
+
+      if (!userDoc.exists) {
+        return;
+      }
+
+      final data = userDoc.data() ?? <String, dynamic>{};
+
+      final email = currentUser?.email ?? data['email'] as String? ?? '';
+
+      final currentDisplayName =
+          (data['displayName'] as String?)?.trim() ?? '';
+
+      final currentDisplayNameKey =
+          (data['displayNameKey'] as String?)?.trim().toLowerCase() ?? '';
+
+      final hasValidDisplayName = _isValidDisplayNameValue(
+            currentDisplayName,
+          ) &&
+          currentDisplayNameKey.isNotEmpty &&
+          currentDisplayNameKey.length <= 20;
+
+      final reserved = await _reserveDisplayNameInTransaction(
+        tx: tx,
+        uid: uid,
+        preferredDisplayName: hasValidDisplayName ? currentDisplayName : null,
+      );
+
+      displayNameToSet = reserved.displayName;
+
+      final updates = _missingUserFieldUpdates(
+        uid: uid,
+        data: data,
+        email: email,
+      );
+
+      if (!hasValidDisplayName ||
+          currentDisplayName != reserved.displayName ||
+          currentDisplayNameKey != reserved.displayNameKey) {
+        updates['displayName'] = reserved.displayName;
+        updates['displayNameKey'] = reserved.displayNameKey;
+      }
+
+      if (updates.isNotEmpty) {
+        updates['updatedAt'] = FieldValue.serverTimestamp();
+
+        tx.set(
+          userRef,
+          updates,
+          SetOptions(merge: true),
+        );
+      }
+
+      if (reserved.shouldCreateDisplayNameDoc) {
+        tx.set(reserved.ref, {
+          'uid': uid,
+          'displayName': reserved.displayName,
+          'displayNameKey': reserved.displayNameKey,
+          'createdAt': FieldValue.serverTimestamp(),
+        });
+      }
+    });
+
+    return displayNameToSet;
   }
 
   Future<User> _ensureSignedInWithEmail({
@@ -86,7 +336,9 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
     final signedInUser = credential.user;
 
     if (signedInUser == null || signedInUser.uid != expectedUser.uid) {
-      throw Exception('[firebase_auth/no-current-user] No user currently signed in.');
+      throw Exception(
+        '[firebase_auth/no-current-user] No user currently signed in.',
+      );
     }
 
     return signedInUser;
@@ -101,12 +353,30 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
     required String password,
   }) async {
     try {
-      return await _auth.signInWithEmailAndPassword(
+      final credential = await _auth.signInWithEmailAndPassword(
         email: email.trim(),
         password: password,
       );
+
+      final user = credential.user;
+
+      if (user != null) {
+        try {
+          final displayName = await _ensureUserFields(user.uid);
+
+          if (displayName.isNotEmpty && _auth.currentUser?.uid == user.uid) {
+            await _auth.currentUser?.updateDisplayName(displayName);
+          }
+        } catch (_) {
+          // 필드 보정 실패 때문에 로그인 자체가 막히지 않게 둠.
+        }
+      }
+
+      return credential;
     } on FirebaseAuthException catch (e) {
       throw Exception('로그인 실패: code=${e.code}, message=${e.message}');
+    } catch (e) {
+      throw Exception('로그인 실패: $e');
     }
   }
 
@@ -154,7 +424,9 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
         password: password,
       );
     } on FirebaseAuthException catch (e) {
-      throw Exception('회원가입 후 로그인 상태 확인 실패: code=${e.code}, message=${e.message}');
+      throw Exception(
+        '회원가입 후 로그인 상태 확인 실패: code=${e.code}, message=${e.message}',
+      );
     } catch (e) {
       throw Exception('회원가입 후 로그인 상태 확인 실패: $e');
     }
@@ -222,6 +494,10 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
       }
     } catch (_) {}
 
+    try {
+      await _ensureUserFields(activeUser.uid);
+    } catch (_) {}
+
     return userCredential;
   }
 
@@ -245,120 +521,123 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
 
       final userRef = _db.collection('users').doc(user.uid);
 
-      final tempDisplayName = _googleTempDisplayName(user.uid);
-      final tempDisplayNameKey = tempDisplayName;
-      final displayNameRef =
-          _db.collection('displayNames').doc(tempDisplayNameKey);
-
-      String authDisplayNameToSet = tempDisplayName;
+      String authDisplayNameToSet = '';
 
       try {
         await _db.runTransaction((tx) async {
           final userDoc = await tx.get(userRef);
 
-          if (userDoc.exists) {
-            final data = userDoc.data();
-
-            final currentDisplayName =
-                (data?['displayName'] as String?)?.trim() ?? '';
-
-            final currentDisplayNameKey =
-                (data?['displayNameKey'] as String?)?.trim() ?? '';
-
-            final savedProfileImageUrl =
-                (data?['profileImageUrl'] as String?)?.trim() ?? '';
-
-            final shouldClearGooglePhoto = _isSameAsGooglePhoto(
-              savedProfileImageUrl: savedProfileImageUrl,
-              googlePhotoUrl: user.photoURL,
+          if (!userDoc.exists) {
+            final reserved = await _reserveDisplayNameInTransaction(
+              tx: tx,
+              uid: user.uid,
             );
 
-            if (currentDisplayName.isNotEmpty &&
-                currentDisplayNameKey.isNotEmpty) {
-              authDisplayNameToSet = currentDisplayName;
+            tx.set(
+              userRef,
+              _defaultUserCreateData(
+                user: user,
+                displayName: reserved.displayName,
+                displayNameKey: reserved.displayNameKey,
+              ),
+            );
 
-              // 기존에 구글 사진이 저장되어 있던 계정이면 자동으로 비움.
-              // 사용자가 앱에서 직접 올린 사진이면 유지됨.
-              if (shouldClearGooglePhoto) {
-                tx.update(userRef, {
-                  'uid': user.uid,
-                  'profileImageUrl': '',
-                  'updatedAt': FieldValue.serverTimestamp(),
-                });
-              }
-
-              return;
+            if (reserved.shouldCreateDisplayNameDoc) {
+              tx.set(reserved.ref, {
+                'uid': user.uid,
+                'displayName': reserved.displayName,
+                'displayNameKey': reserved.displayNameKey,
+                'createdAt': FieldValue.serverTimestamp(),
+              });
             }
 
-            // 기존 users 문서가 있지만 닉네임 정보가 비어 있는 경우 보정
-            tx.update(userRef, {
-              'uid': user.uid,
-              'email': user.email ?? '',
-              'displayName': tempDisplayName,
-              'displayNameKey': tempDisplayNameKey,
-
-              // 구글 프로필 사진 저장하지 않음
-              'profileImageUrl': '',
-
-              'bio': (data?['bio'] as String?) ?? '',
-              'workoutCount': (data?['workoutCount'] as num?) ?? 0,
-              'followersCount': (data?['followersCount'] as num?) ?? 0,
-              'followingsCount': (data?['followingsCount'] as num?) ?? 0,
-              'totalDistance': (data?['totalDistance'] as num?) ?? 0.0,
-              'isPrivate': (data?['isPrivate'] as bool?) ?? false,
-              'updatedAt': FieldValue.serverTimestamp(),
-            });
-
-            tx.set(displayNameRef, {
-              'uid': user.uid,
-              'displayName': tempDisplayName,
-              'displayNameKey': tempDisplayNameKey,
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-
-            authDisplayNameToSet = tempDisplayName;
+            authDisplayNameToSet = reserved.displayName;
             return;
           }
 
-          // 신규 구글 가입 유저 생성
-          tx.set(userRef, {
-            'uid': user.uid,
-            'email': user.email ?? '',
-            'displayName': tempDisplayName,
-            'displayNameKey': tempDisplayNameKey,
+          final data = userDoc.data() ?? <String, dynamic>{};
 
-            // 구글 프로필 사진 저장하지 않음
-            'profileImageUrl': '',
+          final currentDisplayName =
+              (data['displayName'] as String?)?.trim() ?? '';
 
-            'bio': '',
-            'workoutCount': 0,
-            'followersCount': 0,
-            'followingsCount': 0,
-            'totalDistance': 0.0,
-            'isPrivate': false,
-            'createdAt': FieldValue.serverTimestamp(),
-            'updatedAt': FieldValue.serverTimestamp(),
-          });
+          final currentDisplayNameKey =
+              (data['displayNameKey'] as String?)?.trim().toLowerCase() ?? '';
 
-          tx.set(displayNameRef, {
-            'uid': user.uid,
-            'displayName': tempDisplayName,
-            'displayNameKey': tempDisplayNameKey,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
+          final hasValidCurrentDisplayName = _isValidDisplayNameValue(
+                currentDisplayName,
+              ) &&
+              currentDisplayNameKey.isNotEmpty &&
+              currentDisplayNameKey.length <= 20;
 
-          authDisplayNameToSet = tempDisplayName;
+          final reserved = await _reserveDisplayNameInTransaction(
+            tx: tx,
+            uid: user.uid,
+            preferredDisplayName:
+                hasValidCurrentDisplayName ? currentDisplayName : null,
+          );
+
+          final savedProfileImageUrl =
+              (data['profileImageUrl'] as String?)?.trim() ?? '';
+
+          final shouldClearGooglePhoto = _isSameAsGooglePhoto(
+            savedProfileImageUrl: savedProfileImageUrl,
+            googlePhotoUrl: user.photoURL,
+          );
+
+          final updates = _missingUserFieldUpdates(
+            uid: user.uid,
+            data: data,
+            email: user.email ?? '',
+          );
+
+          updates['email'] = user.email ?? data['email'] as String? ?? '';
+
+          if (!hasValidCurrentDisplayName ||
+              currentDisplayName != reserved.displayName ||
+              currentDisplayNameKey != reserved.displayNameKey) {
+            updates['displayName'] = reserved.displayName;
+            updates['displayNameKey'] = reserved.displayNameKey;
+          }
+
+          if (shouldClearGooglePhoto) {
+            updates['profileImageUrl'] = '';
+          }
+
+          if (updates.isNotEmpty) {
+            updates['updatedAt'] = FieldValue.serverTimestamp();
+
+            tx.set(
+              userRef,
+              updates,
+              SetOptions(merge: true),
+            );
+          }
+
+          if (reserved.shouldCreateDisplayNameDoc) {
+            tx.set(reserved.ref, {
+              'uid': user.uid,
+              'displayName': reserved.displayName,
+              'displayNameKey': reserved.displayNameKey,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          }
+
+          authDisplayNameToSet = reserved.displayName;
         });
 
         try {
           final currentUser = _auth.currentUser;
 
           if (currentUser != null && currentUser.uid == user.uid) {
-            await currentUser.updateDisplayName(authDisplayNameToSet);
-
-            // FirebaseAuth 프로필에도 구글 사진을 남기지 않음
+            if (authDisplayNameToSet.isNotEmpty) {
+              await currentUser.updateDisplayName(authDisplayNameToSet);
+            }
             await currentUser.updatePhotoURL(null);
           }
+        } catch (_) {}
+
+        try {
+          await _ensureUserFields(user.uid);
         } catch (_) {}
 
         return userCredential;
@@ -391,7 +670,21 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
 
   @override
   Stream<User?> userAuthStateChanges() {
-    return _auth.authStateChanges();
+    return _auth.authStateChanges().asyncMap((user) async {
+      if (user != null) {
+        try {
+          final displayName = await _ensureUserFields(user.uid);
+
+          if (displayName.isNotEmpty && _auth.currentUser?.uid == user.uid) {
+            await _auth.currentUser?.updateDisplayName(displayName);
+          }
+        } catch (_) {
+          // 앱 시작 시 필드 보정 실패가 auth stream을 깨지 않게 둠.
+        }
+      }
+
+      return user;
+    });
   }
 
   @override
@@ -403,7 +696,7 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
         return null;
       }
 
-      return Auth.fromJson(doc.data()!);
+      return Auth.fromFirestore(doc);
     } catch (e) {
       throw Exception('사용자 데이터 가져오기 실패: $e');
     }
@@ -416,7 +709,7 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
         return null;
       }
 
-      return Auth.fromJson(doc.data()!);
+      return Auth.fromFirestore(doc);
     });
   }
 
@@ -425,6 +718,7 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
     required String uid,
     String? displayName,
     String? profileImageUrl,
+    String? bio,
   }) async {
     try {
       final currentUser = _auth.currentUser;
@@ -496,7 +790,12 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
               : await transaction.get(oldDisplayNameRef);
 
           if (newDisplayNameDoc.exists) {
-            throw Exception('이미 사용 중인 닉네임입니다.');
+            final data = newDisplayNameDoc.data() as Map<String, dynamic>?;
+            final ownerUid = data?['uid'] as String?;
+
+            if (ownerUid != uid) {
+              throw Exception('이미 사용 중인 닉네임입니다.');
+            }
           }
 
           transaction.update(userRef, {
@@ -506,17 +805,24 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
             'updatedAt': FieldValue.serverTimestamp(),
           });
 
-          transaction.set(newDisplayNameRef, {
-            'uid': uid,
-            'displayName': newDisplayName,
-            'displayNameKey': newDisplayNameKey,
-            'createdAt': FieldValue.serverTimestamp(),
-          });
+          if (!newDisplayNameDoc.exists) {
+            transaction.set(newDisplayNameRef, {
+              'uid': uid,
+              'displayName': newDisplayName,
+              'displayNameKey': newDisplayNameKey,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          }
 
           if (oldDisplayNameRef != null &&
               oldDisplayNameDoc != null &&
               oldDisplayNameDoc.exists) {
-            transaction.delete(oldDisplayNameRef);
+            final oldData = oldDisplayNameDoc.data() as Map<String, dynamic>?;
+            final oldOwnerUid = oldData?['uid'] as String?;
+
+            if (oldOwnerUid == uid) {
+              transaction.delete(oldDisplayNameRef);
+            }
           }
         });
 
@@ -525,13 +831,24 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
         } catch (_) {}
       }
 
-      if (profileImageUrl != null) {
-        await userRef.update({
-          'uid': uid,
-          'profileImageUrl': profileImageUrl,
-          'updatedAt': FieldValue.serverTimestamp(),
-        });
+      final normalUpdates = <String, dynamic>{};
 
+      if (profileImageUrl != null) {
+        normalUpdates['profileImageUrl'] = profileImageUrl;
+      }
+
+      if (bio != null) {
+        normalUpdates['bio'] = bio.trim();
+      }
+
+      if (normalUpdates.isNotEmpty) {
+        normalUpdates['uid'] = uid;
+        normalUpdates['updatedAt'] = FieldValue.serverTimestamp();
+
+        await userRef.update(normalUpdates);
+      }
+
+      if (profileImageUrl != null) {
         try {
           await currentUser.updatePhotoURL(profileImageUrl);
         } catch (_) {}
@@ -562,7 +879,14 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
 
       final doc = await _db.collection('displayNames').doc(displayNameKey).get();
 
-      return !doc.exists;
+      if (!doc.exists) {
+        return true;
+      }
+
+      final ownerUid = doc.data()?['uid'] as String?;
+      final currentUid = _auth.currentUser?.uid;
+
+      return currentUid != null && ownerUid == currentUid;
     } catch (e) {
       throw Exception('닉네임 중복 확인 실패: $e');
     }
@@ -576,32 +900,12 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
       throw Exception('로그인이 필요합니다.');
     }
 
-    final uid = user.uid;
-    final userRef = _db.collection('users').doc(uid);
-
     try {
-      final userDoc = await userRef.get();
+      final callable = FirebaseFunctions.instanceFor(
+        region: 'us-central1',
+      ).httpsCallable('deleteUserAccount');
 
-      String? displayNameKey;
-
-      if (userDoc.exists && userDoc.data() != null) {
-        displayNameKey =
-            (userDoc.data()!['displayNameKey'] as String?)?.trim().toLowerCase();
-      }
-
-      final batch = _db.batch();
-
-      if (displayNameKey != null && displayNameKey.isNotEmpty) {
-        final displayNameRef =
-            _db.collection('displayNames').doc(displayNameKey);
-        batch.delete(displayNameRef);
-      }
-
-      batch.delete(userRef);
-
-      await batch.commit();
-
-      await user.delete();
+      await callable.call();
 
       try {
         await GoogleSignIn.instance.signOut();
@@ -610,18 +914,30 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
       try {
         await _auth.signOut();
       } catch (_) {}
-    } on FirebaseAuthException catch (e) {
-      if (e.code == 'requires-recent-login') {
-        throw Exception('보안을 위해 다시 로그인한 뒤 계정을 삭제해주세요.');
-      }
-
-      throw Exception('계정 삭제 실패: code=${e.code}, message=${e.message}');
-    } on FirebaseException catch (e) {
+    } on FirebaseFunctionsException catch (e) {
       throw Exception(
-        '계정 삭제 Firestore 실패: code=${e.code}, message=${e.message}',
+        '계정 삭제 실패: code=${e.code}, message=${e.message}',
+      );
+    } on FirebaseAuthException catch (e) {
+      throw Exception(
+        '계정 삭제 후 로그아웃 실패: code=${e.code}, message=${e.message}',
       );
     } catch (e) {
       throw Exception('계정 삭제 실패: $e');
     }
   }
+}
+
+class _ReservedDisplayName {
+  const _ReservedDisplayName({
+    required this.displayName,
+    required this.displayNameKey,
+    required this.ref,
+    required this.shouldCreateDisplayNameDoc,
+  });
+
+  final String displayName;
+  final String displayNameKey;
+  final DocumentReference<Map<String, dynamic>> ref;
+  final bool shouldCreateDisplayNameDoc;
 }

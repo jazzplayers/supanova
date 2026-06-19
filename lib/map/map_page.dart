@@ -31,9 +31,7 @@ class _MapPageState extends ConsumerState<MapPage> {
   static const double _defaultZoom = 17;
 
   static const Color _bg = Color(0xFF0B0F14);
-  static const Color _card = Color(0xFF151B22);
   static const Color _primaryText = Color(0xFFF5F7FA);
-  static const Color _secondaryText = Color(0xFF9CA3AF);
   static const Color _blue = Color(0xFF5DADEC);
 
   @override
@@ -52,7 +50,6 @@ class _MapPageState extends ConsumerState<MapPage> {
 
     try {
       final repo = ref.read(mapRepositoryProvider);
-
       final position = await repo.getCurrentLocation();
 
       if (!mounted) return;
@@ -69,7 +66,6 @@ class _MapPageState extends ConsumerState<MapPage> {
       });
 
       await _startPositionStream();
-
       await _moveCamera(latLng);
     } catch (e) {
       if (!mounted) return;
@@ -184,6 +180,14 @@ class _MapPageState extends ConsumerState<MapPage> {
     });
   }
 
+  Future<void> _openAppLocationSettings() async {
+    await Geolocator.openAppSettings();
+  }
+
+  Future<void> _openDeviceLocationSettings() async {
+    await Geolocator.openLocationSettings();
+  }
+
   @override
   void dispose() {
     _positionSub?.cancel();
@@ -196,9 +200,12 @@ class _MapPageState extends ConsumerState<MapPage> {
     if (_isLoading) {
       return const Scaffold(
         backgroundColor: _bg,
-        body: Center(
-          child: CircularProgressIndicator(
-            color: _blue,
+        body: SafeArea(
+          child: Center(
+            child: CircularProgressIndicator(
+              color: _blue,
+              strokeWidth: 2,
+            ),
           ),
         ),
       );
@@ -209,11 +216,13 @@ class _MapPageState extends ConsumerState<MapPage> {
         backgroundColor: _bg,
         body: SafeArea(
           child: Center(
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 24),
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(24, 24, 24, 24),
               child: _LocationErrorCard(
                 message: _errorMessage!,
                 onRetry: _initLocation,
+                onOpenAppSettings: _openAppLocationSettings,
+                onOpenLocationSettings: _openDeviceLocationSettings,
               ),
             ),
           ),
@@ -226,22 +235,29 @@ class _MapPageState extends ConsumerState<MapPage> {
     if (target == null) {
       return const Scaffold(
         backgroundColor: _bg,
-        body: Center(
-          child: Text(
-            '현재 위치 정보가 없습니다.',
-            style: TextStyle(
-              color: _primaryText,
+        body: SafeArea(
+          child: Center(
+            child: Text(
+              '현재 위치 정보가 없습니다.',
+              style: TextStyle(
+                color: _primaryText,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ),
       );
     }
 
+    final topPadding = MediaQuery.paddingOf(context).top;
+    final bottomPadding = MediaQuery.paddingOf(context).bottom;
+
     return Scaffold(
+      backgroundColor: _bg,
       body: Stack(
         children: [
           GoogleMap(
-            gestureRecognizers: {
+            gestureRecognizers: <Factory<OneSequenceGestureRecognizer>>{
               Factory<OneSequenceGestureRecognizer>(
                 () => EagerGestureRecognizer(),
               ),
@@ -250,23 +266,15 @@ class _MapPageState extends ConsumerState<MapPage> {
               target: target,
               zoom: _defaultZoom,
             ),
-
             myLocationEnabled: true,
-
-            // 기본 구글맵 버튼 OFF
-            // 오른쪽 아래 버튼이 여러 개 생기는 원인이었음
             myLocationButtonEnabled: false,
             zoomControlsEnabled: false,
             mapToolbarEnabled: false,
-
             compassEnabled: true,
-
-            // 지도 조작 ON
             scrollGesturesEnabled: true,
             tiltGesturesEnabled: true,
             zoomGesturesEnabled: true,
             rotateGesturesEnabled: true,
-
             onMapCreated: (controller) async {
               _controller = controller;
 
@@ -274,13 +282,10 @@ class _MapPageState extends ConsumerState<MapPage> {
                 await _moveCamera(_target!);
               }
             },
-
             onCameraMoveStarted: () {
               if (_isMovingByCode) return;
-
               _stopFollowing();
             },
-
             markers: {
               Marker(
                 markerId: const MarkerId('current_location'),
@@ -290,7 +295,6 @@ class _MapPageState extends ConsumerState<MapPage> {
                 ),
               ),
             },
-
             circles: {
               Circle(
                 circleId: const CircleId('current_location_circle'),
@@ -298,23 +302,21 @@ class _MapPageState extends ConsumerState<MapPage> {
                 radius: 100,
                 strokeWidth: 2,
                 strokeColor: _blue,
-                fillColor: _blue.withOpacity(0.15),
+                fillColor: _blue.withAlpha(38),
               ),
             },
           ),
-
           Positioned(
-            top: MediaQuery.of(context).padding.top + 16,
+            top: topPadding + 14,
             left: 16,
             right: 16,
             child: _MapStatusCard(
               followMe: _followMe,
             ),
           ),
-
           Positioned(
             right: 16,
-            bottom: 24,
+            bottom: 18 + bottomPadding,
             child: _CurrentLocationButton(
               followMe: _followMe,
               onTap: _followMe ? _stopFollowing : _goToCurrentLocation,
@@ -329,10 +331,14 @@ class _MapPageState extends ConsumerState<MapPage> {
 class _LocationErrorCard extends StatelessWidget {
   final String message;
   final VoidCallback onRetry;
+  final VoidCallback onOpenAppSettings;
+  final VoidCallback onOpenLocationSettings;
 
   const _LocationErrorCard({
     required this.message,
     required this.onRetry,
+    required this.onOpenAppSettings,
+    required this.onOpenLocationSettings,
   });
 
   static const Color _card = Color(0xFF151B22);
@@ -349,7 +355,7 @@ class _LocationErrorCard extends StatelessWidget {
         color: _card,
         borderRadius: BorderRadius.circular(24),
         border: Border.all(
-          color: Colors.white.withOpacity(0.08),
+          color: Colors.white.withAlpha(20),
         ),
       ),
       child: Column(
@@ -359,7 +365,7 @@ class _LocationErrorCard extends StatelessWidget {
             width: 64,
             height: 64,
             decoration: BoxDecoration(
-              color: _blue.withOpacity(0.12),
+              color: _blue.withAlpha(31),
               shape: BoxShape.circle,
             ),
             child: const Icon(
@@ -371,10 +377,12 @@ class _LocationErrorCard extends StatelessWidget {
           const SizedBox(height: 18),
           const Text(
             '위치를 불러올 수 없습니다',
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: _primaryText,
               fontSize: 18,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
+              letterSpacing: -0.2,
             ),
           ),
           const SizedBox(height: 10),
@@ -385,6 +393,7 @@ class _LocationErrorCard extends StatelessWidget {
               color: _secondaryText,
               fontSize: 14,
               height: 1.5,
+              fontWeight: FontWeight.w500,
             ),
           ),
           const SizedBox(height: 22),
@@ -405,7 +414,53 @@ class _LocationErrorCard extends StatelessWidget {
               label: const Text(
                 '다시 시도',
                 style: TextStyle(
-                  fontWeight: FontWeight.w700,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 10),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: OutlinedButton.icon(
+              onPressed: onOpenAppSettings,
+              style: OutlinedButton.styleFrom(
+                foregroundColor: _primaryText,
+                side: const BorderSide(
+                  color: Color(0xFF2A3340),
+                  width: 1,
+                ),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: const Icon(Icons.settings_outlined, size: 20),
+              label: const Text(
+                '앱 위치 권한 설정',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          SizedBox(
+            width: double.infinity,
+            height: 46,
+            child: TextButton.icon(
+              onPressed: onOpenLocationSettings,
+              style: TextButton.styleFrom(
+                foregroundColor: _secondaryText,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+              ),
+              icon: const Icon(Icons.gps_fixed_rounded, size: 20),
+              label: const Text(
+                '기기 위치 서비스 설정',
+                style: TextStyle(
+                  fontWeight: FontWeight.w800,
                 ),
               ),
             ),
@@ -433,19 +488,20 @@ class _MapStatusCard extends StatelessWidget {
     return IgnorePointer(
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
+        curve: Curves.easeOut,
         padding: const EdgeInsets.symmetric(
           horizontal: 16,
           vertical: 14,
         ),
         decoration: BoxDecoration(
-          color: _card.withOpacity(0.92),
+          color: _card.withAlpha(235),
           borderRadius: BorderRadius.circular(18),
           border: Border.all(
-            color: Colors.white.withOpacity(0.08),
+            color: Colors.white.withAlpha(20),
           ),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.16),
+              color: Colors.black.withAlpha(41),
               blurRadius: 18,
               offset: const Offset(0, 8),
             ),
@@ -457,7 +513,7 @@ class _MapStatusCard extends StatelessWidget {
               width: 38,
               height: 38,
               decoration: BoxDecoration(
-                color: _blue.withOpacity(0.14),
+                color: _blue.withAlpha(36),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -470,30 +526,41 @@ class _MapStatusCard extends StatelessWidget {
             ),
             const SizedBox(width: 12),
             Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    followMe ? '현재 위치 따라가는 중' : '지도 이동됨',
-                    style: const TextStyle(
-                      color: _primaryText,
-                      fontSize: 14,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
-                  const SizedBox(height: 3),
-                  Text(
-                    followMe
-                        ? '내 위치가 바뀌면 지도가 자동으로 이동합니다.'
-                        : '오른쪽 아래 버튼을 누르면 현재 위치로 돌아갑니다.',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      color: _secondaryText,
-                      fontSize: 12,
-                    ),
-                  ),
-                ],
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  final compact = constraints.maxWidth < 260;
+
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        followMe ? '현재 위치 따라가는 중' : '지도 이동됨',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          color: _primaryText,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      if (!compact) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          followMe
+                              ? '내 위치가 바뀌면 지도가 자동으로 이동합니다.'
+                              : '오른쪽 아래 버튼을 누르면 현재 위치로 돌아갑니다.',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: _secondaryText,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ],
+                  );
+                },
               ),
             ),
           ],
@@ -524,6 +591,7 @@ class _CurrentLocationButton extends StatelessWidget {
         borderRadius: BorderRadius.circular(18),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
+          curve: Curves.easeOut,
           width: 56,
           height: 56,
           decoration: BoxDecoration(
@@ -531,12 +599,12 @@ class _CurrentLocationButton extends StatelessWidget {
             borderRadius: BorderRadius.circular(18),
             border: Border.all(
               color: followMe
-                  ? Colors.white.withOpacity(0.18)
-                  : Colors.white.withOpacity(0.10),
+                  ? Colors.white.withAlpha(46)
+                  : Colors.white.withAlpha(26),
             ),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withOpacity(0.24),
+                color: Colors.black.withAlpha(61),
                 blurRadius: 18,
                 offset: const Offset(0, 8),
               ),

@@ -11,3 +11,5 @@ export {feedLike} from "./feed/like";
 export {feedUnlike} from "./feed/unlike";
 
 export {onWorkoutFinishCreated} from "./ranking/onWorkoutFinishCreated";
+
+export {deleteUserAccount} from "./delete/deleteAccount";

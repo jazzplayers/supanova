@@ -57,6 +57,48 @@ final class UserAuthRepositoryProvider
 String _$userAuthRepositoryHash() =>
     r'97f5b9e03334d15d591fee5561a83f006f771556';
 
+/// Firebase Auth 로그인 상태 감지용
+/// UserAuthRepositoryImpl 안의 _ensureUserFields()가 여기서도 실행됨.
+
+@ProviderFor(userAuthStateChanges)
+final userAuthStateChangesProvider = UserAuthStateChangesProvider._();
+
+/// Firebase Auth 로그인 상태 감지용
+/// UserAuthRepositoryImpl 안의 _ensureUserFields()가 여기서도 실행됨.
+
+final class UserAuthStateChangesProvider
+    extends $FunctionalProvider<AsyncValue<User?>, User?, Stream<User?>>
+    with $FutureModifier<User?>, $StreamProvider<User?> {
+  /// Firebase Auth 로그인 상태 감지용
+  /// UserAuthRepositoryImpl 안의 _ensureUserFields()가 여기서도 실행됨.
+  UserAuthStateChangesProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'userAuthStateChangesProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$userAuthStateChangesHash();
+
+  @$internal
+  @override
+  $StreamProviderElement<User?> $createElement($ProviderPointer pointer) =>
+      $StreamProviderElement(pointer);
+
+  @override
+  Stream<User?> create(Ref ref) {
+    return userAuthStateChanges(ref);
+  }
+}
+
+String _$userAuthStateChangesHash() =>
+    r'ca8f1fd57234d84d3df75b8109e86f216175da55';
+
 @ProviderFor(userAuthData)
 final userAuthDataProvider = UserAuthDataFamily._();
 
@@ -157,7 +199,7 @@ final class UserSignOutProvider
   }
 }
 
-String _$userSignOutHash() => r'9ea97418bd6f0cfa23fe80e917f45f314c8beb4e';
+String _$userSignOutHash() => r'9a200b6cf562cd1417bee446ee3182a7826dc78d';
 
 @ProviderFor(deleteAccount)
 final deleteAccountProvider = DeleteAccountProvider._();
@@ -190,7 +232,7 @@ final class DeleteAccountProvider
   }
 }
 
-String _$deleteAccountHash() => r'75a760c65f3b5f4f2c08d60619b0006fd3a1f197';
+String _$deleteAccountHash() => r'1e433c3e2ea5f5a926658e14d31f1019d8809706';
 
 @ProviderFor(myUid)
 final myUidProvider = MyUidProvider._();
@@ -240,7 +282,12 @@ final class UpdateUserDataProvider
     with $FutureModifier<void>, $FutureProvider<void> {
   UpdateUserDataProvider._({
     required UpdateUserDataFamily super.from,
-    required ({String uid, String? displayName, String? profileImageUrl})
+    required ({
+      String uid,
+      String? displayName,
+      String? profileImageUrl,
+      String? bio,
+    })
     super.argument,
   }) : super(
          retry: null,
@@ -269,12 +316,18 @@ final class UpdateUserDataProvider
   FutureOr<void> create(Ref ref) {
     final argument =
         this.argument
-            as ({String uid, String? displayName, String? profileImageUrl});
+            as ({
+              String uid,
+              String? displayName,
+              String? profileImageUrl,
+              String? bio,
+            });
     return updateUserData(
       ref,
       uid: argument.uid,
       displayName: argument.displayName,
       profileImageUrl: argument.profileImageUrl,
+      bio: argument.bio,
     );
   }
 
@@ -289,13 +342,18 @@ final class UpdateUserDataProvider
   }
 }
 
-String _$updateUserDataHash() => r'f443ade7f452fd7a4dc346b42aeead4b9a12333e';
+String _$updateUserDataHash() => r'dccff04d977ff086ebed31b226fac0d5fed533d8';
 
 final class UpdateUserDataFamily extends $Family
     with
         $FunctionalFamilyOverride<
           FutureOr<void>,
-          ({String uid, String? displayName, String? profileImageUrl})
+          ({
+            String uid,
+            String? displayName,
+            String? profileImageUrl,
+            String? bio,
+          })
         > {
   UpdateUserDataFamily._()
     : super(
@@ -310,11 +368,13 @@ final class UpdateUserDataFamily extends $Family
     required String uid,
     String? displayName,
     String? profileImageUrl,
+    String? bio,
   }) => UpdateUserDataProvider._(
     argument: (
       uid: uid,
       displayName: displayName,
       profileImageUrl: profileImageUrl,
+      bio: bio,
     ),
     from: this,
   );
@@ -425,4 +485,4 @@ final class SignInWithGoogleProvider
   }
 }
 
-String _$signInWithGoogleHash() => r'0e2aff6c78dc0ed48e0435dca3cc272eb3b10e61';
+String _$signInWithGoogleHash() => r'7449b8fdf185389a2fb790352ae64fea79270eb3';

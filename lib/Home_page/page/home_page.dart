@@ -6,8 +6,8 @@ import 'package:go_router/go_router.dart';
 
 import 'package:home_function/Home_page/home_widget/month_goal/month_goal_UI.dart';
 import 'package:home_function/Home_page/home_widget/month_goal/month_goal_provider.dart';
-import 'package:home_function/Home_page/page/home_ranking_page.dart';
 import 'package:home_function/Home_page/home_widget/TopProfileCard/Top_Profile_card.dart';
+import 'package:home_function/Home_page/page/home_ranking_page.dart';
 
 import 'package:home_function/auth/model/auth/auth_provider.dart';
 import 'package:home_function/calendar/calendar_page.dart';
@@ -38,6 +38,20 @@ class _HomePageState extends ConsumerState<HomePage> {
     return width < 360 ? 14 : 16;
   }
 
+  ScrollPhysics _pageScrollPhysics(BuildContext context) {
+    final platform = Theme.of(context).platform;
+
+    if (platform == TargetPlatform.iOS) {
+      return const AlwaysScrollableScrollPhysics(
+        parent: BouncingScrollPhysics(),
+      );
+    }
+
+    return const AlwaysScrollableScrollPhysics(
+      parent: ClampingScrollPhysics(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final userAsync = ref.watch(userAuthDataProvider(widget.userId));
@@ -52,50 +66,53 @@ class _HomePageState extends ConsumerState<HomePage> {
         if (user == null) {
           return Scaffold(
             backgroundColor: _bg,
-            body: Center(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const CircularProgressIndicator(
-                      color: _primaryText,
-                      strokeWidth: 2,
-                    ),
-                    const SizedBox(height: 16),
-                    const Text(
-                      '사용자 정보를 불러오는 중입니다',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: _secondaryText,
-                        fontWeight: FontWeight.w700,
+            body: SafeArea(
+              child: Center(
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.person_off_outlined,
+                        color: _primaryText,
+                        size: 34,
                       ),
-                    ),
-                    const SizedBox(height: 8),
-                    const Text(
-                      '잠시 후에도 계속 보이면 다시 불러오기를 눌러주세요.',
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        color: _secondaryText,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                        height: 1.4,
-                      ),
-                    ),
-                    const SizedBox(height: 14),
-                    TextButton(
-                      onPressed: () {
-                        ref.invalidate(userAuthDataProvider(widget.userId));
-                      },
-                      child: const Text(
-                        '다시 불러오기',
+                      const SizedBox(height: 14),
+                      const Text(
+                        '사용자 정보를 찾을 수 없습니다',
+                        textAlign: TextAlign.center,
                         style: TextStyle(
                           color: _primaryText,
                           fontWeight: FontWeight.w800,
                         ),
                       ),
-                    ),
-                  ],
+                      const SizedBox(height: 8),
+                      const Text(
+                        '잠시 후에도 계속 보이면 다시 불러오기를 눌러주세요.',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: _secondaryText,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
+                          height: 1.4,
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+                      TextButton(
+                        onPressed: () {
+                          ref.invalidate(userAuthDataProvider(widget.userId));
+                        },
+                        child: const Text(
+                          '다시 불러오기',
+                          style: TextStyle(
+                            color: _primaryText,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -104,13 +121,17 @@ class _HomePageState extends ConsumerState<HomePage> {
 
         return Scaffold(
           backgroundColor: _bg,
+          resizeToAvoidBottomInset: true,
           appBar: AppBar(
             backgroundColor: _bg,
             surfaceTintColor: Colors.transparent,
+            shadowColor: Colors.transparent,
             elevation: 0,
+            scrolledUnderElevation: 0,
             centerTitle: true,
             toolbarHeight: 52,
             automaticallyImplyLeading: false,
+            titleSpacing: 12,
             title: Text(
               user.displayName,
               maxLines: 1,
@@ -135,6 +156,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                   color: _surface,
                   surfaceTintColor: Colors.transparent,
                   elevation: 8,
+                  position: PopupMenuPosition.under,
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(16),
                     side: const BorderSide(
@@ -142,7 +164,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                       width: 0.8,
                     ),
                   ),
-                  offset: const Offset(0, 44),
                   onSelected: (value) {
                     if (value == 'settings') {
                       context.push('/settings');
@@ -176,8 +197,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                   child: const Padding(
                     padding: EdgeInsets.only(right: 8),
                     child: SizedBox(
-                      width: 40,
-                      height: 40,
+                      width: 42,
+                      height: 42,
                       child: Icon(
                         Icons.more_horiz,
                         color: _primaryText,
@@ -202,6 +223,7 @@ class _HomePageState extends ConsumerState<HomePage> {
             child: RefreshIndicator(
               color: _primaryText,
               backgroundColor: _surface,
+              displacement: 24,
               onRefresh: () async {
                 ref.invalidate(userAuthDataProvider(widget.userId));
                 ref.invalidate(totalDistanceThisDayProvider(widget.userId));
@@ -209,12 +231,10 @@ class _HomePageState extends ConsumerState<HomePage> {
               },
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final bottomPadding = 104 + media.padding.bottom;
+                  final bottomPadding = 30.0 + media.padding.bottom;
 
                   return SingleChildScrollView(
-                    physics: const AlwaysScrollableScrollPhysics(
-                      parent: BouncingScrollPhysics(),
-                    ),
+                    physics: _pageScrollPhysics(context),
                     padding: EdgeInsets.fromLTRB(
                       0,
                       12,
@@ -271,10 +291,12 @@ class _HomePageState extends ConsumerState<HomePage> {
       loading: () {
         return const Scaffold(
           backgroundColor: _bg,
-          body: Center(
-            child: CircularProgressIndicator(
-              color: _primaryText,
-              strokeWidth: 2,
+          body: SafeArea(
+            child: Center(
+              child: CircularProgressIndicator(
+                color: _primaryText,
+                strokeWidth: 2,
+              ),
             ),
           ),
         );
@@ -285,51 +307,53 @@ class _HomePageState extends ConsumerState<HomePage> {
 
         return Scaffold(
           backgroundColor: _bg,
-          body: Center(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(
-                    Icons.error_outline_rounded,
-                    color: _primaryText,
-                    size: 34,
-                  ),
-                  const SizedBox(height: 14),
-                  const Text(
-                    '에러가 발생했습니다',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
+          body: SafeArea(
+            child: Center(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.error_outline_rounded,
                       color: _primaryText,
-                      fontWeight: FontWeight.w800,
+                      size: 34,
                     ),
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '사용자 정보를 불러오지 못했습니다.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      color: _secondaryText,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      height: 1.4,
-                    ),
-                  ),
-                  const SizedBox(height: 14),
-                  TextButton(
-                    onPressed: () {
-                      ref.invalidate(userAuthDataProvider(widget.userId));
-                    },
-                    child: const Text(
-                      '다시 불러오기',
+                    const SizedBox(height: 14),
+                    const Text(
+                      '에러가 발생했습니다',
+                      textAlign: TextAlign.center,
                       style: TextStyle(
                         color: _primaryText,
                         fontWeight: FontWeight.w800,
                       ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+                    const Text(
+                      '사용자 정보를 불러오지 못했습니다.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: _secondaryText,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                        height: 1.4,
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    TextButton(
+                      onPressed: () {
+                        ref.invalidate(userAuthDataProvider(widget.userId));
+                      },
+                      child: const Text(
+                        '다시 불러오기',
+                        style: TextStyle(
+                          color: _primaryText,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -355,10 +379,11 @@ class _AppBarIconButton extends StatelessWidget {
     return IconButton(
       onPressed: onTap,
       visualDensity: VisualDensity.compact,
+      padding: EdgeInsets.zero,
       style: IconButton.styleFrom(
         foregroundColor: _primaryText,
-        fixedSize: const Size(40, 40),
-        minimumSize: const Size(40, 40),
+        fixedSize: const Size(42, 42),
+        minimumSize: const Size(42, 42),
         tapTargetSize: MaterialTapTargetSize.shrinkWrap,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
@@ -447,7 +472,7 @@ class _MiniStat extends ConsumerWidget {
               width: compact ? 39 : 42,
               height: compact ? 39 : 42,
               decoration: BoxDecoration(
-                color: _accent.withOpacity(0.13),
+                color: _accent.withAlpha(33),
                 shape: BoxShape.circle,
               ),
               child: Icon(
@@ -509,8 +534,13 @@ class RecentRecords extends ConsumerStatefulWidget {
 class _RecentRecordsState extends ConsumerState<RecentRecords> {
   @override
   Widget build(BuildContext context) {
-    final height = MediaQuery.sizeOf(context).height;
-    final cardHeight = (height * 0.38).clamp(270.0, 350.0);
+    final media = MediaQuery.of(context);
+    final height = media.size.height;
+    final isSmallHeight = height < 720;
+
+    final cardHeight = isSmallHeight
+        ? (height * 0.34).clamp(245.0, 305.0)
+        : (height * 0.36).clamp(270.0, 345.0);
 
     return SizedBox(
       width: double.infinity,
@@ -546,6 +576,16 @@ class RecentWorkoutRecords extends ConsumerWidget {
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
 
+  ScrollPhysics _listScrollPhysics(BuildContext context) {
+    final platform = Theme.of(context).platform;
+
+    if (platform == TargetPlatform.iOS) {
+      return const BouncingScrollPhysics();
+    }
+
+    return const ClampingScrollPhysics();
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final recordsAsync = ref.watch(workoutFinishListProvider(userId));
@@ -570,7 +610,7 @@ class RecentWorkoutRecords extends ConsumerWidget {
         return ListView.separated(
           itemCount: records.length,
           padding: EdgeInsets.zero,
-          physics: const BouncingScrollPhysics(),
+          physics: _listScrollPhysics(context),
           separatorBuilder: (_, _) => const SizedBox(height: 10),
           itemBuilder: (context, index) {
             final w = records[index];
@@ -585,15 +625,18 @@ class RecentWorkoutRecords extends ConsumerWidget {
 
             final pace = _formatPace(w.paceMinPerKm);
 
-            return InkWell(
-              borderRadius: BorderRadius.circular(14),
-              onTap: () {
-                context.push('/workoutFeed', extra: w);
-              },
-              child: _RecordItem(
-                date: dateStr,
-                distance: distance,
-                pace: pace,
+            return Material(
+              color: Colors.transparent,
+              child: InkWell(
+                borderRadius: BorderRadius.circular(14),
+                onTap: () {
+                  context.push('/workoutFeed', extra: w);
+                },
+                child: _RecordItem(
+                  date: dateStr,
+                  distance: distance,
+                  pace: pace,
+                ),
               ),
             );
           },
@@ -680,7 +723,7 @@ class _RecordItem extends StatelessWidget {
                 width: compact ? 38 : 40,
                 height: compact ? 38 : 40,
                 decoration: BoxDecoration(
-                  color: _accent.withOpacity(0.13),
+                  color: _accent.withAlpha(33),
                   shape: BoxShape.circle,
                 ),
                 child: Icon(
@@ -787,7 +830,7 @@ class _SectionHeader extends StatelessWidget {
 class _SectionFrame extends StatelessWidget {
   const _SectionFrame({
     required this.child,
-    this.padding = const EdgeInsets.all(0),
+    this.padding = EdgeInsets.zero,
   });
 
   final Widget child;
@@ -801,6 +844,7 @@ class _SectionFrame extends StatelessWidget {
     return Container(
       width: double.infinity,
       padding: padding,
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(18),
@@ -827,7 +871,7 @@ void _showCalendarBottomSheet(BuildContext context, String userId) {
     isDismissible: true,
     enableDrag: true,
     backgroundColor: Colors.transparent,
-    barrierColor: Colors.black.withOpacity(0.68),
+    barrierColor: Colors.black.withAlpha(173),
     builder: (sheetContext) {
       final media = MediaQuery.of(sheetContext);
       final height = media.size.height;
@@ -854,7 +898,7 @@ void _showCalendarBottomSheet(BuildContext context, String userId) {
             ),
             child: SafeArea(
               top: false,
-              bottom: false,
+              bottom: true,
               child: Column(
                 children: [
                   SizedBox(

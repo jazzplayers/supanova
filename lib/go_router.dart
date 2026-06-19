@@ -22,7 +22,6 @@ import 'package:home_function/workout/workout_UI/workout_page.dart';
 import 'package:home_function/workout_finish/feed/feed_page.dart';
 import 'package:home_function/workout_finish/workout_finish.dart';
 import 'package:home_function/workout_finish/workout_finish_page.dart';
-import 'package:home_function/ztestpage.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'go_router.g.dart';
@@ -51,7 +50,7 @@ GoRouter goRouter(Ref ref) {
         return '/login';
       }
 
-      if (user != null && isAuthPage) {
+      if (isAuthPage) {
         return '/home';
       }
 
@@ -171,15 +170,10 @@ GoRouter goRouter(Ref ref) {
         },
       ),
       GoRoute(
-        path: '/test',
-        builder: (context, state) {
-          return const TestPage();
-        },
-      ),
-      GoRoute(
         path: '/followersList',
         builder: (context, state) {
-          final userId = state.extra as String?;
+          final extra = state.extra;
+          final userId = extra is String ? extra : null;
 
           if (userId == null || userId.isEmpty) {
             return const Scaffold(
@@ -199,7 +193,8 @@ GoRouter goRouter(Ref ref) {
       GoRoute(
         path: '/followingsList',
         builder: (context, state) {
-          final userId = state.extra as String?;
+          final extra = state.extra;
+          final userId = extra is String ? extra : null;
 
           if (userId == null || userId.isEmpty) {
             return const Scaffold(
