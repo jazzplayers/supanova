@@ -2,8 +2,10 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:home_function/auth/model/auth/auth_provider.dart';
+import 'package:home_function/reports/reports_provider.dart';
 import 'package:home_function/widget/app_snack_bar.dart';
 import 'package:home_function/workout_finish/feed/feed_edit_page.dart';
 import 'package:home_function/workout_finish/feed/like_Controller/like_button.dart';
@@ -152,7 +154,6 @@ class FeedCard extends ConsumerWidget {
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
-  // static const Color _softText = Color(0xFF66666D);
   static const Color _accent = Color(0xFF5DADEC);
   static const Color _danger = Color(0xFFE85D5D);
 
@@ -403,6 +404,358 @@ class FeedCard extends ConsumerWidget {
     }
   }
 
+  Future<void> _showReportBottomSheet({
+    required BuildContext context,
+    required WidgetRef ref,
+  }) async {
+    final workoutId = workoutFinish.workoutId;
+
+    if (workoutId == null || workoutId.isEmpty) {
+      showAppSnackBar(
+        context,
+        message: '신고할 운동 기록 ID가 없습니다.',
+        icon: Icons.error_rounded,
+        isError: true,
+      );
+      return;
+    }
+
+    const reasons = <String, String>{
+      'spam': '스팸 또는 광고',
+      'harassment': '괴롭힘 또는 비방',
+      'hate': '혐오 표현',
+      'sexual': '선정적인 콘텐츠',
+      'violence': '폭력적인 콘텐츠',
+      'privacy': '개인정보 노출',
+      'illegal': '불법 또는 위험한 행위',
+      'other': '기타',
+    };
+
+    String selectedReason = 'spam';
+    bool isSubmitting = false;
+    final reasonController = TextEditingController();
+
+    final submittedMessage = await showModalBottomSheet<String>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withAlpha(173),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (modalContext, setModalState) {
+            Future<void> submitReport() async {
+              if (isSubmitting) return;
+
+              setModalState(() {
+                isSubmitting = true;
+              });
+
+              try {
+                final result = await ref.read(
+                  createReportProvider(
+                    targetType: 'workoutFinish',
+                    targetId: workoutId,
+                    reasonCode: selectedReason,
+                    reasonText: reasonController.text.trim(),
+                  ).future,
+                );
+
+                if (!sheetContext.mounted) return;
+
+                Navigator.of(sheetContext).pop(
+                  result.alreadyReported
+                      ? '이미 신고한 게시글입니다.'
+                      : '신고가 접수되었습니다.',
+                );
+              } catch (e, st) {
+                debugPrint('createReport error: $e');
+                debugPrint('createReport stackTrace: $st');
+
+                if (!modalContext.mounted) return;
+
+                final message = e
+                    .toString()
+                    .replaceFirst('Exception: ', '')
+                    .trim();
+
+                showAppSnackBar(
+                  modalContext,
+                  message: message.isEmpty
+                      ? '신고에 실패했습니다. 잠시 후 다시 시도해주세요.'
+                      : message,
+                  icon: Icons.error_rounded,
+                  isError: true,
+                );
+
+                setModalState(() {
+                  isSubmitting = false;
+                });
+              }
+            }
+
+            return PopScope(
+              canPop: !isSubmitting,
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    left: 16,
+                    right: 16,
+                    bottom: MediaQuery.of(modalContext).viewInsets.bottom + 14,
+                  ),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: _surface,
+                      borderRadius: BorderRadius.circular(24),
+                      border: Border.all(
+                        color: _line,
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(18, 14, 18, 18),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Center(
+                            child: Container(
+                              width: 38,
+                              height: 4,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF3A3A40),
+                                borderRadius: BorderRadius.circular(999),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+                          const Text(
+                            '게시글 신고하기',
+                            style: TextStyle(
+                              color: _primaryText,
+                              fontSize: 19,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.35,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            '이 운동 기록을 신고하는 이유를 선택해주세요. 접수된 신고는 검토 후 처리됩니다.',
+                            style: TextStyle(
+                              color: _secondaryText,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600,
+                              height: 1.45,
+                            ),
+                          ),
+                          const SizedBox(height: 14),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: _surfaceSoft,
+                              borderRadius: BorderRadius.circular(18),
+                              border: Border.all(
+                                color: _line,
+                                width: 0.8,
+                              ),
+                            ),
+                            child: Column(
+                              children: reasons.entries.map((entry) {
+                                final isSelected =
+                                    selectedReason == entry.key;
+
+                                return InkWell(
+                                  borderRadius: BorderRadius.circular(18),
+                                  onTap: isSubmitting
+                                      ? null
+                                      : () {
+                                          setModalState(() {
+                                            selectedReason = entry.key;
+                                          });
+                                        },
+                                  child: Padding(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 14,
+                                      vertical: 13,
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Icon(
+                                          isSelected
+                                              ? Icons.radio_button_checked
+                                              : Icons.radio_button_off,
+                                          color: isSelected
+                                              ? _accent
+                                              : _secondaryText,
+                                          size: 21,
+                                        ),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Text(
+                                            entry.value,
+                                            style: TextStyle(
+                                              color: isSelected
+                                                  ? _primaryText
+                                                  : _secondaryText,
+                                              fontSize: 14,
+                                              fontWeight: isSelected
+                                                  ? FontWeight.w800
+                                                  : FontWeight.w600,
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              }).toList(),
+                            ),
+                          ),
+                          if (selectedReason == 'other') ...[
+                            const SizedBox(height: 14),
+                            TextField(
+                              controller: reasonController,
+                              enabled: !isSubmitting,
+                              maxLength: 300,
+                              maxLines: 3,
+                              style: const TextStyle(
+                                color: _primaryText,
+                                fontSize: 14,
+                                fontWeight: FontWeight.w600,
+                              ),
+                              decoration: InputDecoration(
+                                hintText: '신고 내용을 입력해주세요.',
+                                hintStyle: const TextStyle(
+                                  color: Color(0xFF77777D),
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                counterStyle: const TextStyle(
+                                  color: Color(0xFF77777D),
+                                ),
+                                filled: true,
+                                fillColor: _surfaceSoft,
+                                contentPadding: const EdgeInsets.all(14),
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(
+                                    color: _line,
+                                    width: 0.8,
+                                  ),
+                                ),
+                                enabledBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(
+                                    color: _line,
+                                    width: 0.8,
+                                  ),
+                                ),
+                                focusedBorder: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                  borderSide: const BorderSide(
+                                    color: _accent,
+                                    width: 1,
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: SizedBox(
+                                  height: 48,
+                                  child: TextButton(
+                                    onPressed: isSubmitting
+                                        ? null
+                                        : () {
+                                            Navigator.of(sheetContext).pop();
+                                          },
+                                    style: TextButton.styleFrom(
+                                      foregroundColor: _secondaryText,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                        side: const BorderSide(
+                                          color: _line,
+                                          width: 0.8,
+                                        ),
+                                      ),
+                                    ),
+                                    child: const Text(
+                                      '취소',
+                                      style: TextStyle(
+                                        fontSize: 15,
+                                        fontWeight: FontWeight.w800,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: SizedBox(
+                                  height: 48,
+                                  child: ElevatedButton(
+                                    onPressed:
+                                        isSubmitting ? null : submitReport,
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: _danger,
+                                      foregroundColor: _primaryText,
+                                      disabledBackgroundColor:
+                                          _danger.withAlpha(90),
+                                      disabledForegroundColor:
+                                          _primaryText.withAlpha(150),
+                                      elevation: 0,
+                                      shape: RoundedRectangleBorder(
+                                        borderRadius: BorderRadius.circular(15),
+                                      ),
+                                    ),
+                                    child: isSubmitting
+                                        ? const SizedBox(
+                                            width: 18,
+                                            height: 18,
+                                            child: CircularProgressIndicator(
+                                              color: _primaryText,
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Text(
+                                            '신고 접수',
+                                            style: TextStyle(
+                                              fontSize: 15,
+                                              fontWeight: FontWeight.w900,
+                                            ),
+                                          ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    reasonController.dispose();
+
+    if (!context.mounted) return;
+
+    if (submittedMessage != null && submittedMessage.isNotEmpty) {
+      showAppSnackBar(
+        context,
+        message: submittedMessage,
+        icon: Icons.check_circle_rounded,
+      );
+    }
+  }
+
   String _formatTime() {
     final createdAt = workoutFinish.createdAt;
 
@@ -446,6 +799,10 @@ class FeedCard extends ConsumerWidget {
 
     final myUid = ref.watch(myUidProvider);
     final isMyPost = myUid == postOwnerUid;
+    final canReportPost = !isMyPost &&
+        myUid != null &&
+        workoutFinish.workoutId != null &&
+        workoutFinish.workoutId!.isNotEmpty;
 
     final distanceKm = workoutFinish.distanceMeters / 1000;
     final durationText = _formatDuration(workoutFinish.seconds);
@@ -485,7 +842,7 @@ class FeedCard extends ConsumerWidget {
                     behavior: HitTestBehavior.opaque,
                     onTap: () {
                       if (postOwnerUid.isNotEmpty) {
-                        Navigator.of(context).pushNamed('/user/$postOwnerUid');
+                        context.push('/profile/$postOwnerUid');
                       }
                     },
                     child: Column(
@@ -594,6 +951,56 @@ class FeedCard extends ConsumerWidget {
                         ),
                       ];
                     },
+                  )
+                else if (canReportPost)
+                  PopupMenuButton<String>(
+                    tooltip: '메뉴',
+                    color: _surface,
+                    surfaceTintColor: Colors.transparent,
+                    elevation: 8,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: const BorderSide(
+                        color: _line,
+                        width: 0.8,
+                      ),
+                    ),
+                    icon: const Icon(
+                      Icons.more_horiz_rounded,
+                      color: _primaryText,
+                    ),
+                    onSelected: (value) {
+                      if (value == 'report') {
+                        _showReportBottomSheet(
+                          context: context,
+                          ref: ref,
+                        );
+                      }
+                    },
+                    itemBuilder: (context) {
+                      return const [
+                        PopupMenuItem<String>(
+                          value: 'report',
+                          child: Row(
+                            children: [
+                              Icon(
+                                Icons.flag_outlined,
+                                color: _danger,
+                                size: 20,
+                              ),
+                              SizedBox(width: 10),
+                              Text(
+                                '신고하기',
+                                style: TextStyle(
+                                  color: _danger,
+                                  fontWeight: FontWeight.w700,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ];
+                    },
                   ),
               ],
             ),
@@ -615,7 +1022,6 @@ class FeedCard extends ConsumerWidget {
                     workoutFinish.workoutId != null &&
                     workoutFinish.workoutId!.isNotEmpty)
                   LikeButton(
-                    
                     myUid: myUid,
                     workoutFinishId: workoutFinish.workoutId!,
                   ),
@@ -850,7 +1256,6 @@ class _NoImageWorkoutBanner extends StatelessWidget {
   const _NoImageWorkoutBanner();
 
   static const Color _surface = Color(0xFF0B0B0D);
-  // static const Color _surfaceSoft = Color(0xFF121216);
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);

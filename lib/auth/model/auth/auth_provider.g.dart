@@ -486,3 +486,36 @@ final class SignInWithGoogleProvider
 }
 
 String _$signInWithGoogleHash() => r'7449b8fdf185389a2fb790352ae64fea79270eb3';
+
+@ProviderFor(signInWithApple)
+final signInWithAppleProvider = SignInWithAppleProvider._();
+
+final class SignInWithAppleProvider
+    extends $FunctionalProvider<AsyncValue<void>, void, FutureOr<void>>
+    with $FutureModifier<void>, $FutureProvider<void> {
+  SignInWithAppleProvider._()
+    : super(
+        from: null,
+        argument: null,
+        retry: null,
+        name: r'signInWithAppleProvider',
+        isAutoDispose: true,
+        dependencies: null,
+        $allTransitiveDependencies: null,
+      );
+
+  @override
+  String debugGetCreateSourceHash() => _$signInWithAppleHash();
+
+  @$internal
+  @override
+  $FutureProviderElement<void> $createElement($ProviderPointer pointer) =>
+      $FutureProviderElement(pointer);
+
+  @override
+  FutureOr<void> create(Ref ref) {
+    return signInWithApple(ref);
+  }
+}
+
+String _$signInWithAppleHash() => r'24e3dc0c3df3bbc81bf328f7aa62cc661350e7aa';

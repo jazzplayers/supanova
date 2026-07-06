@@ -14,11 +14,17 @@ import 'package:home_function/workout_finish/workout_finish_provider.dart';
 class TopProfileCard extends ConsumerStatefulWidget {
   final String userId;
   final bool isMe;
+  final bool isRestricted;
+  final bool isBlocked;
+  final bool isPrivateLocked;
 
   const TopProfileCard({
     super.key,
     required this.userId,
     required this.isMe,
+    this.isRestricted = false,
+    this.isBlocked = false,
+    this.isPrivateLocked = false,
   });
 
   @override
@@ -346,15 +352,23 @@ class _TopProfileCardState extends ConsumerState<TopProfileCard> {
   Widget build(BuildContext context) {
     final myUid = ref.watch(myUidProvider);
     final userAsync = ref.watch(userAuthDataProvider(widget.userId));
-    final followersCountAsync = ref.watch(followersCountProvider(widget.userId));
-    final followingsCountAsync =
-        ref.watch(followingsCountProvider(widget.userId));
-    final followState = ref.watch(followControllerProvider);
-    final workoutCountAsync = ref.watch(workoutCountProvider(widget.userId));
 
+    final isRestricted = !widget.isMe && widget.isRestricted;
+
+    final followersCountAsync = isRestricted
+        ? const AsyncData<int>(0)
+        : ref.watch(followersCountProvider(widget.userId));
+    final followingsCountAsync = isRestricted
+        ? const AsyncData<int>(0)
+        : ref.watch(followingsCountProvider(widget.userId));
+    final workoutCountAsync = isRestricted
+        ? const AsyncData<int>(0)
+        : ref.watch(workoutCountProvider(widget.userId));
+
+    final followState = ref.watch(followControllerProvider);
     final isSubmitting = followState.isLoading;
 
-    final isFollowingAsync = (!widget.isMe && myUid != null)
+    final isFollowingAsync = (!widget.isMe && myUid != null && !isRestricted)
         ? ref.watch(isFollowingProvider(myUid, widget.userId))
         : const AsyncData(false);
 
@@ -386,51 +400,57 @@ class _TopProfileCardState extends ConsumerState<TopProfileCard> {
               final compact = constraints.maxWidth < 360;
               final avatarRadius = compact ? 35.0 : 39.0;
 
-              final actionButton = widget.isMe
-                  ? _ProfileActionButton(
-                      label: '프로필 수정',
-                      onPressed: () {
-                        showEditProfileDialog(
-                          currentDisplayName: user.displayName,
-                        );
-                      },
-                    )
-                  : isFollowingAsync.when(
-                      data: (isFollowing) {
-                        return _ProfileActionButton(
-                          label: isSubmitting
-                              ? '처리 중...'
-                              : isFollowing
-                                  ? '팔로잉'
-                                  : '팔로우',
-                          filled: !isFollowing,
-                          disabled: isSubmitting || myUid == null,
-                          onPressed: (isSubmitting || myUid == null)
-                              ? null
-                              : () async {
-                                  final controller = ref.read(
-                                    followControllerProvider.notifier,
-                                  );
+              final Widget actionButton;
 
-                                  if (isFollowing) {
-                                    await controller.unfollow(widget.userId);
-                                  } else {
-                                    await controller.follow(widget.userId);
-                                  }
-                                },
-                        );
-                      },
-                      loading: () => const _ProfileActionButton(
-                        label: '확인 중...',
-                        disabled: true,
-                        onPressed: null,
-                      ),
-                      error: (e, st) => const _ProfileActionButton(
-                        label: '오류',
-                        disabled: true,
-                        onPressed: null,
-                      ),
+              if (widget.isMe) {
+                actionButton = _ProfileActionButton(
+                  label: '프로필 수정',
+                  onPressed: () {
+                    showEditProfileDialog(
+                      currentDisplayName: user.displayName,
                     );
+                  },
+                );
+              } else if (isRestricted) {
+                actionButton = const _RestrictedActionNotice();
+              } else {
+                actionButton = isFollowingAsync.when(
+                  data: (isFollowing) {
+                    return _ProfileActionButton(
+                      label: isSubmitting
+                          ? '처리 중...'
+                          : isFollowing
+                              ? '팔로잉'
+                              : '팔로우',
+                      filled: !isFollowing,
+                      disabled: isSubmitting || myUid == null,
+                      onPressed: (isSubmitting || myUid == null)
+                          ? null
+                          : () async {
+                              final controller = ref.read(
+                                followControllerProvider.notifier,
+                              );
+
+                              if (isFollowing) {
+                                await controller.unfollow(widget.userId);
+                              } else {
+                                await controller.follow(widget.userId);
+                              }
+                            },
+                    );
+                  },
+                  loading: () => const _ProfileActionButton(
+                    label: '확인 중...',
+                    disabled: true,
+                    onPressed: null,
+                  ),
+                  error: (e, st) => const _ProfileActionButton(
+                    label: '오류',
+                    disabled: true,
+                    onPressed: null,
+                  ),
+                );
+              }
 
               return Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -470,6 +490,7 @@ class _TopProfileCardState extends ConsumerState<TopProfileCard> {
                             followersCountAsync: followersCountAsync,
                             followingsCountAsync: followingsCountAsync,
                             userId: widget.userId,
+                            isRestricted: isRestricted,
                           ),
                         ),
                       ],
@@ -823,12 +844,24 @@ class _ProfileStatsRow extends StatelessWidget {
     required this.followersCountAsync,
     required this.followingsCountAsync,
     required this.userId,
+    required this.isRestricted,
   });
 
   final AsyncValue<int> workoutCountAsync;
   final AsyncValue<int> followersCountAsync;
   final AsyncValue<int> followingsCountAsync;
   final String userId;
+  final bool isRestricted;
+
+  String _countText(AsyncValue<int> asyncValue) {
+    if (isRestricted) return '-';
+
+    return asyncValue.when(
+      data: (count) => count.toString(),
+      loading: () => '...',
+      error: (e, st) => '!',
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -836,29 +869,23 @@ class _ProfileStatsRow extends StatelessWidget {
       children: [
         Expanded(
           child: ProfileStatItem(
-            value: workoutCountAsync.when(
-              data: (count) => count.toString(),
-              loading: () => '...',
-              error: (e, st) => '!',
-            ),
+            value: _countText(workoutCountAsync),
             label: '운동',
           ),
         ),
         Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () {
-              context.push(
-                '/followersList',
-                extra: userId,
-              );
-            },
+            onTap: isRestricted
+                ? null
+                : () {
+                    context.push(
+                      '/followersList',
+                      extra: userId,
+                    );
+                  },
             child: ProfileStatItem(
-              value: followersCountAsync.when(
-                data: (count) => count.toString(),
-                loading: () => '...',
-                error: (e, st) => '!',
-              ),
+              value: _countText(followersCountAsync),
               label: '팔로워',
             ),
           ),
@@ -866,18 +893,16 @@ class _ProfileStatsRow extends StatelessWidget {
         Expanded(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
-            onTap: () {
-              context.push(
-                '/followingsList',
-                extra: userId,
-              );
-            },
+            onTap: isRestricted
+                ? null
+                : () {
+                    context.push(
+                      '/followingsList',
+                      extra: userId,
+                    );
+                  },
             child: ProfileStatItem(
-              value: followingsCountAsync.when(
-                data: (count) => count.toString(),
-                loading: () => '...',
-                error: (e, st) => '!',
-              ),
+              value: _countText(followingsCountAsync),
               label: '팔로잉',
             ),
           ),
@@ -914,6 +939,71 @@ class _ProfileNameBlock extends StatelessWidget {
         ),
         const SizedBox(height: 4),
       ],
+    );
+  }
+}
+
+class _RestrictedActionNotice extends StatelessWidget {
+  const _RestrictedActionNotice();
+
+  static const Color _surfaceSoft = Color(0xFF121216);
+  static const Color _line = Color(0xFF26262B);
+  static const Color _primaryText = Color(0xFFFFFFFF);
+  static const Color _secondaryText = Color(0xFF9B9BA1);
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(13, 12, 13, 12),
+      decoration: BoxDecoration(
+        color: _surfaceSoft,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(
+          color: _line,
+          width: 0.8,
+        ),
+      ),
+      child: const Row(
+        children: [
+          Icon(
+            Icons.lock_outline_rounded,
+            color: _primaryText,
+            size: 19,
+          ),
+          SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '비공개 계정입니다',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _primaryText,
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                SizedBox(height: 3),
+                Text(
+                  '이 사용자의 프로필과 운동 기록은 볼 수 없습니다.',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: _secondaryText,
+                    fontSize: 12.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

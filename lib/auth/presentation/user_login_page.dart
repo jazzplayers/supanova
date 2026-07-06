@@ -33,9 +33,12 @@ class _UserLoginPageState extends ConsumerState<UserLoginPage> {
 
   bool _isEmailLoading = false;
   bool _isGoogleLoading = false;
+  bool _isAppleLoading = false;
   bool _obscurePassword = true;
 
-  bool get _isLoading => _isEmailLoading || _isGoogleLoading;
+  bool get _isLoading {
+    return _isEmailLoading || _isGoogleLoading || _isAppleLoading;
+  }
 
   bool _isIOS(BuildContext context) {
     return Theme.of(context).platform == TargetPlatform.iOS;
@@ -156,6 +159,43 @@ class _UserLoginPageState extends ConsumerState<UserLoginPage> {
     }
   }
 
+  Future<void> signInWithApple() async {
+    if (_isLoading) return;
+
+    FocusScope.of(context).unfocus();
+
+    try {
+      setState(() {
+        _isAppleLoading = true;
+      });
+
+      ref.invalidate(signInWithAppleProvider);
+
+      await ref.read(signInWithAppleProvider.future);
+
+      if (!mounted) return;
+
+      context.go('/home');
+    } catch (e) {
+      if (!mounted) return;
+
+      final message = _parseAppleLoginError(e);
+
+      if (message == null) return;
+
+      _showLoginSnackBar(
+        message,
+        icon: Icons.error_rounded,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isAppleLoading = false;
+        });
+      }
+    }
+  }
+
   bool _isValidEmail(String email) {
     return RegExp(
       r'^[^\s@]+@[^\s@]+\.[^\s@]+$',
@@ -233,6 +273,46 @@ class _UserLoginPageState extends ConsumerState<UserLoginPage> {
     }
 
     return '구글 로그인에 실패했습니다. 잠시 후 다시 시도해주세요.';
+  }
+
+  String? _parseAppleLoginError(Object error) {
+    String raw = error.toString().toLowerCase();
+
+    if (error is FirebaseAuthException) {
+      raw = error.code.toLowerCase();
+    }
+
+    if (raw.contains('canceled') ||
+        raw.contains('cancel') ||
+        raw.contains('popup_closed') ||
+        raw.contains('web-context-canceled') ||
+        raw.contains('로그인 취소')) {
+      return null;
+    }
+
+    if (raw.contains('account-exists-with-different-credential')) {
+      return '이미 다른 로그인 방식으로 가입된 이메일입니다.';
+    }
+
+    if (raw.contains('network-request-failed') ||
+        raw.contains('network') ||
+        raw.contains('unavailable')) {
+      return '인터넷 연결을 확인한 뒤 다시 시도해주세요.';
+    }
+
+    if (raw.contains('operation-not-allowed')) {
+      return 'Firebase에서 Apple 로그인이 활성화되어 있지 않습니다.';
+    }
+
+    if (raw.contains('web-context-already-presented')) {
+      return 'Apple 로그인 창이 이미 열려 있습니다.';
+    }
+
+    if (raw.contains('user-disabled')) {
+      return '사용할 수 없는 계정입니다. 고객지원으로 문의해주세요.';
+    }
+
+    return 'Apple 로그인에 실패했습니다. 잠시 후 다시 시도해주세요.';
   }
 
   void _showLoginSnackBar(
@@ -348,6 +428,58 @@ class _UserLoginPageState extends ConsumerState<UserLoginPage> {
     );
   }
 
+  Widget _socialLoginButton({
+    required VoidCallback? onPressed,
+    required bool isLoading,
+    required IconData icon,
+    required String label,
+    required Color iconColor,
+  }) {
+    return SizedBox(
+      height: 52,
+      child: OutlinedButton.icon(
+        onPressed: onPressed,
+        style: OutlinedButton.styleFrom(
+          backgroundColor: _surfaceSoft,
+          foregroundColor: _primaryText,
+          disabledForegroundColor: _softText,
+          side: const BorderSide(
+            color: _line,
+            width: 0.8,
+          ),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(15),
+          ),
+        ),
+        icon: isLoading
+            ? SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: iconColor,
+                ),
+              )
+            : Icon(
+                icon,
+                color: iconColor,
+                size: 22,
+              ),
+        label: Text(
+          label,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 15.5,
+            fontWeight: FontWeight.w900,
+            letterSpacing: -0.1,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
@@ -393,49 +525,20 @@ class _UserLoginPageState extends ConsumerState<UserLoginPage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.stretch,
                             children: [
-                              SizedBox(
-                                height: 52,
-                                child: OutlinedButton.icon(
-                                  onPressed:
-                                      canTap ? signInWithGoogle : null,
-                                  style: OutlinedButton.styleFrom(
-                                    backgroundColor: _surfaceSoft,
-                                    foregroundColor: _primaryText,
-                                    disabledForegroundColor: _softText,
-                                    side: const BorderSide(
-                                      color: _line,
-                                      width: 0.8,
-                                    ),
-                                    elevation: 0,
-                                    shape: RoundedRectangleBorder(
-                                      borderRadius: BorderRadius.circular(15),
-                                    ),
-                                  ),
-                                  icon: _isGoogleLoading
-                                      ? const SizedBox(
-                                          width: 18,
-                                          height: 18,
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: _blue,
-                                          ),
-                                        )
-                                      : const Icon(
-                                          Icons.login_rounded,
-                                          color: _blue,
-                                          size: 21,
-                                        ),
-                                  label: const Text(
-                                    'Google로 계속하기',
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: TextStyle(
-                                      fontSize: 15.5,
-                                      fontWeight: FontWeight.w900,
-                                      letterSpacing: -0.1,
-                                    ),
-                                  ),
-                                ),
+                              _socialLoginButton(
+                                onPressed: canTap ? signInWithGoogle : null,
+                                isLoading: _isGoogleLoading,
+                                icon: Icons.login_rounded,
+                                label: 'Google로 계속하기',
+                                iconColor: _blue,
+                              ),
+                              const SizedBox(height: 12),
+                              _socialLoginButton(
+                                onPressed: canTap ? signInWithApple : null,
+                                isLoading: _isAppleLoading,
+                                icon: Icons.apple,
+                                label: 'Apple로 계속하기',
+                                iconColor: _primaryText,
                               ),
                               const SizedBox(height: 26),
                               _dividerWithText('또는 이메일로 로그인'),

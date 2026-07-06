@@ -23,6 +23,7 @@ import 'package:home_function/workout_finish/feed/feed_page.dart';
 import 'package:home_function/workout_finish/workout_finish.dart';
 import 'package:home_function/workout_finish/workout_finish_page.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
+import 'package:home_function/Home_Page/settings/block/block_user.dart';
 
 part 'go_router.g.dart';
 
@@ -88,6 +89,10 @@ GoRouter goRouter(Ref ref) {
       GoRoute(
         path: '/settings-delete-account',
         builder: (context, state) => const DeleteAccountPage(),
+      ),
+      GoRoute(
+        path: '/settings-block-user',
+        builder: (context, state) => const BlockUserPage(),
       ),
       GoRoute(
         path: '/workfinish',

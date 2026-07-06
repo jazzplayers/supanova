@@ -70,10 +70,14 @@ Future<List<WorkoutFinish>> workoutFinishList(
   Ref ref,
   String userId,
 ) async {
+  final auth = ref.read(firebaseAuthProvider);
   final workoutFinishRepo = ref.watch(workoutFinishRepoProvider);
+
+  final viewerUid = auth.currentUser?.uid;
 
   return workoutFinishRepo.getWorkoutRecord(
     userId: userId,
+    viewerUid: viewerUid,
   );
 }
 
@@ -94,10 +98,14 @@ Future<List<WorkoutFinish>> feedWorkoutFinish(
   Ref ref,
   String userId,
 ) async {
+  final auth = ref.read(firebaseAuthProvider);
   final workoutFinishRepo = ref.watch(workoutFinishRepoProvider);
+
+  final viewerUid = auth.currentUser?.uid;
 
   return workoutFinishRepo.getFeedWorkoutFinish(
     userId: userId,
+    viewerUid: viewerUid,
   );
 }
 

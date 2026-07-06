@@ -13,3 +13,9 @@ export {feedUnlike} from "./feed/unlike";
 export {onWorkoutFinishCreated} from "./ranking/onWorkoutFinishCreated";
 
 export {deleteUserAccount} from "./delete/deleteAccount";
+
+export {blockUser} from "./blockUser/blockUser";
+
+export {unblockUser} from "./blockUser/unblockUser";
+
+export {createReport} from "./report/createReport";

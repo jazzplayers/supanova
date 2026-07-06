@@ -129,6 +129,16 @@ class SettingsPage extends ConsumerWidget {
                     context.push('/settings-privacy');
                   },
                 ),
+                const _GroupDivider(),
+                _SettingTile(
+                  icon: Icons.block_rounded,
+                  title: '차단한 계정',
+                  subtitle: '차단한 사용자를 확인하고 해제',
+                  iconColor: _danger,
+                  onTap: () {
+                    context.push('/settings-block-user');
+                  },
+                ),
               ],
             ),
             const SizedBox(height: 22),

@@ -21,20 +21,21 @@ class StatsCard extends StatelessWidget {
     return Container(
       width: double.infinity,
       constraints: const BoxConstraints(
-        minHeight: 82,
+        minHeight: 88,
       ),
       padding: const EdgeInsets.fromLTRB(14, 13, 14, 13),
+      clipBehavior: Clip.antiAlias,
       decoration: BoxDecoration(
         color: _surface,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: _line,
-          width: 0.8,
+          width: 1,
         ),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
-          final compact = constraints.maxWidth < 150;
+          final bool compact = constraints.maxWidth < 150;
 
           return Column(
             mainAxisSize: MainAxisSize.min,
@@ -62,18 +63,21 @@ class StatsCard extends StatelessWidget {
                         fontSize: compact ? 12 : 13,
                         fontWeight: FontWeight.w700,
                         letterSpacing: -0.1,
+                        height: 1.15,
                       ),
                     ),
                   ),
                 ],
               ),
               const SizedBox(height: 10),
-              Align(
-                alignment: Alignment.centerLeft,
+              SizedBox(
+                width: double.infinity,
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
                   alignment: Alignment.centerLeft,
                   child: DefaultTextStyle.merge(
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: _primaryText,
                       fontSize: compact ? 22 : 24,

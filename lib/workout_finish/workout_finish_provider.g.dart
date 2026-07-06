@@ -396,7 +396,7 @@ final class WorkoutFinishListProvider
   }
 }
 
-String _$workoutFinishListHash() => r'ecd34b7695689ecd52c17b47c77fb37f837f899b';
+String _$workoutFinishListHash() => r'459107280ca1ea24d4d75dbd8add797ff4d6ed4b';
 
 final class WorkoutFinishListFamily extends $Family
     with $FunctionalFamilyOverride<FutureOr<List<WorkoutFinish>>, String> {
@@ -548,7 +548,7 @@ final class FeedWorkoutFinishProvider
   }
 }
 
-String _$feedWorkoutFinishHash() => r'961ab6207fe5fbc6bf2310a6a4717bcce20a1570';
+String _$feedWorkoutFinishHash() => r'397dba08793a3513a6c8da9921545f619a8aa103';
 
 final class FeedWorkoutFinishFamily extends $Family
     with $FunctionalFamilyOverride<FutureOr<List<WorkoutFinish>>, String> {

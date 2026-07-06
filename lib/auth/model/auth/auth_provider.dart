@@ -92,3 +92,13 @@ Future<void> signInWithGoogle(Ref ref) async {
   ref.invalidate(myUidProvider);
   ref.invalidate(userAuthStateChangesProvider);
 }
+
+@riverpod
+Future<void> signInWithApple(Ref ref) async {
+  final authRepo = ref.read(userAuthRepositoryProvider);
+
+  await authRepo.signInWithApple();
+
+  ref.invalidate(myUidProvider);
+  ref.invalidate(userAuthStateChangesProvider);
+}

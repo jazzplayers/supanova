@@ -40,6 +40,8 @@ abstract class UserAuthRepository {
 
   Future<UserCredential> signInWithGoogle();
 
+  Future<UserCredential> signInWithApple();
+
   Future<void> deleteAccount();
 }
 
@@ -317,6 +319,137 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
     return displayNameToSet;
   }
 
+  Future<void> _syncSocialUserToFirestore({
+    required User user,
+    required String providerLabel,
+    String? providerPhotoUrl,
+  }) async {
+    final userRef = _db.collection('users').doc(user.uid);
+
+    String authDisplayNameToSet = '';
+
+    try {
+      await _db.runTransaction((tx) async {
+        final userDoc = await tx.get(userRef);
+
+        if (!userDoc.exists) {
+          final reserved = await _reserveDisplayNameInTransaction(
+            tx: tx,
+            uid: user.uid,
+          );
+
+          tx.set(
+            userRef,
+            _defaultUserCreateData(
+              user: user,
+              displayName: reserved.displayName,
+              displayNameKey: reserved.displayNameKey,
+            ),
+          );
+
+          if (reserved.shouldCreateDisplayNameDoc) {
+            tx.set(reserved.ref, {
+              'uid': user.uid,
+              'displayName': reserved.displayName,
+              'displayNameKey': reserved.displayNameKey,
+              'createdAt': FieldValue.serverTimestamp(),
+            });
+          }
+
+          authDisplayNameToSet = reserved.displayName;
+          return;
+        }
+
+        final data = userDoc.data() ?? <String, dynamic>{};
+
+        final currentDisplayName =
+            (data['displayName'] as String?)?.trim() ?? '';
+
+        final currentDisplayNameKey =
+            (data['displayNameKey'] as String?)?.trim().toLowerCase() ?? '';
+
+        final hasValidCurrentDisplayName = _isValidDisplayNameValue(
+              currentDisplayName,
+            ) &&
+            currentDisplayNameKey.isNotEmpty &&
+            currentDisplayNameKey.length <= 20;
+
+        final reserved = await _reserveDisplayNameInTransaction(
+          tx: tx,
+          uid: user.uid,
+          preferredDisplayName:
+              hasValidCurrentDisplayName ? currentDisplayName : null,
+        );
+
+        final savedProfileImageUrl =
+            (data['profileImageUrl'] as String?)?.trim() ?? '';
+
+        final shouldClearProviderPhoto = _isSameAsGooglePhoto(
+          savedProfileImageUrl: savedProfileImageUrl,
+          googlePhotoUrl: providerPhotoUrl,
+        );
+
+        final updates = _missingUserFieldUpdates(
+          uid: user.uid,
+          data: data,
+          email: user.email ?? '',
+        );
+
+        updates['email'] = user.email ?? data['email'] as String? ?? '';
+
+        if (!hasValidCurrentDisplayName ||
+            currentDisplayName != reserved.displayName ||
+            currentDisplayNameKey != reserved.displayNameKey) {
+          updates['displayName'] = reserved.displayName;
+          updates['displayNameKey'] = reserved.displayNameKey;
+        }
+
+        if (shouldClearProviderPhoto) {
+          updates['profileImageUrl'] = '';
+        }
+
+        if (updates.isNotEmpty) {
+          updates['updatedAt'] = FieldValue.serverTimestamp();
+
+          tx.set(
+            userRef,
+            updates,
+            SetOptions(merge: true),
+          );
+        }
+
+        if (reserved.shouldCreateDisplayNameDoc) {
+          tx.set(reserved.ref, {
+            'uid': user.uid,
+            'displayName': reserved.displayName,
+            'displayNameKey': reserved.displayNameKey,
+            'createdAt': FieldValue.serverTimestamp(),
+          });
+        }
+
+        authDisplayNameToSet = reserved.displayName;
+      });
+
+      try {
+        final currentUser = _auth.currentUser;
+
+        if (currentUser != null && currentUser.uid == user.uid) {
+          if (authDisplayNameToSet.isNotEmpty) {
+            await currentUser.updateDisplayName(authDisplayNameToSet);
+          }
+
+          await currentUser.updatePhotoURL(null);
+        }
+      } catch (_) {}
+
+      try {
+        await _ensureUserFields(user.uid);
+      } catch (_) {}
+    } catch (e) {
+      throw Exception('$providerLabel 로그인 Firestore 실패: $e');
+    }
+  }
+
   Future<User> _ensureSignedInWithEmail({
     required User expectedUser,
     required String email,
@@ -519,131 +652,13 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
         throw Exception('구글 로그인 유저 정보를 가져오지 못했습니다.');
       }
 
-      final userRef = _db.collection('users').doc(user.uid);
+      await _syncSocialUserToFirestore(
+        user: user,
+        providerLabel: '구글',
+        providerPhotoUrl: user.photoURL,
+      );
 
-      String authDisplayNameToSet = '';
-
-      try {
-        await _db.runTransaction((tx) async {
-          final userDoc = await tx.get(userRef);
-
-          if (!userDoc.exists) {
-            final reserved = await _reserveDisplayNameInTransaction(
-              tx: tx,
-              uid: user.uid,
-            );
-
-            tx.set(
-              userRef,
-              _defaultUserCreateData(
-                user: user,
-                displayName: reserved.displayName,
-                displayNameKey: reserved.displayNameKey,
-              ),
-            );
-
-            if (reserved.shouldCreateDisplayNameDoc) {
-              tx.set(reserved.ref, {
-                'uid': user.uid,
-                'displayName': reserved.displayName,
-                'displayNameKey': reserved.displayNameKey,
-                'createdAt': FieldValue.serverTimestamp(),
-              });
-            }
-
-            authDisplayNameToSet = reserved.displayName;
-            return;
-          }
-
-          final data = userDoc.data() ?? <String, dynamic>{};
-
-          final currentDisplayName =
-              (data['displayName'] as String?)?.trim() ?? '';
-
-          final currentDisplayNameKey =
-              (data['displayNameKey'] as String?)?.trim().toLowerCase() ?? '';
-
-          final hasValidCurrentDisplayName = _isValidDisplayNameValue(
-                currentDisplayName,
-              ) &&
-              currentDisplayNameKey.isNotEmpty &&
-              currentDisplayNameKey.length <= 20;
-
-          final reserved = await _reserveDisplayNameInTransaction(
-            tx: tx,
-            uid: user.uid,
-            preferredDisplayName:
-                hasValidCurrentDisplayName ? currentDisplayName : null,
-          );
-
-          final savedProfileImageUrl =
-              (data['profileImageUrl'] as String?)?.trim() ?? '';
-
-          final shouldClearGooglePhoto = _isSameAsGooglePhoto(
-            savedProfileImageUrl: savedProfileImageUrl,
-            googlePhotoUrl: user.photoURL,
-          );
-
-          final updates = _missingUserFieldUpdates(
-            uid: user.uid,
-            data: data,
-            email: user.email ?? '',
-          );
-
-          updates['email'] = user.email ?? data['email'] as String? ?? '';
-
-          if (!hasValidCurrentDisplayName ||
-              currentDisplayName != reserved.displayName ||
-              currentDisplayNameKey != reserved.displayNameKey) {
-            updates['displayName'] = reserved.displayName;
-            updates['displayNameKey'] = reserved.displayNameKey;
-          }
-
-          if (shouldClearGooglePhoto) {
-            updates['profileImageUrl'] = '';
-          }
-
-          if (updates.isNotEmpty) {
-            updates['updatedAt'] = FieldValue.serverTimestamp();
-
-            tx.set(
-              userRef,
-              updates,
-              SetOptions(merge: true),
-            );
-          }
-
-          if (reserved.shouldCreateDisplayNameDoc) {
-            tx.set(reserved.ref, {
-              'uid': user.uid,
-              'displayName': reserved.displayName,
-              'displayNameKey': reserved.displayNameKey,
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-          }
-
-          authDisplayNameToSet = reserved.displayName;
-        });
-
-        try {
-          final currentUser = _auth.currentUser;
-
-          if (currentUser != null && currentUser.uid == user.uid) {
-            if (authDisplayNameToSet.isNotEmpty) {
-              await currentUser.updateDisplayName(authDisplayNameToSet);
-            }
-            await currentUser.updatePhotoURL(null);
-          }
-        } catch (_) {}
-
-        try {
-          await _ensureUserFields(user.uid);
-        } catch (_) {}
-
-        return userCredential;
-      } catch (e) {
-        throw Exception('구글 로그인 Firestore 실패: $e');
-      }
+      return userCredential;
     } on FirebaseAuthException catch (e) {
       throw Exception('구글 로그인 실패: code=${e.code}, message=${e.message}');
     } on FirebaseException catch (e) {
@@ -652,6 +667,37 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
       );
     } catch (e) {
       throw Exception('구글 로그인 실패: $e');
+    }
+  }
+
+  @override
+  Future<UserCredential> signInWithApple() async {
+    try {
+      final appleProvider = AppleAuthProvider()
+        ..addScope('email')
+        ..addScope('name');
+
+      final userCredential = await _auth.signInWithProvider(appleProvider);
+      final user = userCredential.user;
+
+      if (user == null) {
+        throw Exception('애플 로그인 유저 정보를 가져오지 못했습니다.');
+      }
+
+      await _syncSocialUserToFirestore(
+        user: user,
+        providerLabel: '애플',
+      );
+
+      return userCredential;
+    } on FirebaseAuthException catch (e) {
+      throw Exception('애플 로그인 실패: code=${e.code}, message=${e.message}');
+    } on FirebaseException catch (e) {
+      throw Exception(
+        '애플 로그인 Firestore 실패: code=${e.code}, message=${e.message}',
+      );
+    } catch (e) {
+      throw Exception('애플 로그인 실패: $e');
     }
   }
 

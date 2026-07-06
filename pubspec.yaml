@@ -1,7 +1,7 @@
 name: home_function
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.1.0+1
+version: 0.1.0+2
 
 environment:
   sdk: ^3.11.0
@@ -36,6 +36,7 @@ dependencies:
   crypto: ^3.0.7
   url_launcher: ^6.3.2
   flutter_image_compress: ^2.4.0
+  flutter_native_splash: ^2.4.7
 
 dev_dependencies:
   flutter_test:
@@ -53,3 +54,9 @@ flutter_launcher_icons:
   ios: true
   image_path: "assets/icons/logo.png"
   remove_alpha_ios: true
+
+flutter_native_splash:
+  color: "#050814"
+  image: "assets/icons/splash_icon.png"
+  android: true
+  ios: true
