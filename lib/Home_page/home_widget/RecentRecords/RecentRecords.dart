@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
-import 'package:home_function/workout_finish/workout_finish_provider.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish_provider.dart';
 import 'package:home_function/Home_page/home_widget/statsRow/statsRow.dart';
 
 

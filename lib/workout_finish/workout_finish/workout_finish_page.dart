@@ -4,13 +4,14 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 import 'package:home_function/core/firebase.dart';
 import 'package:home_function/image_picker/image_picker_provider.dart';
 import 'package:home_function/widget/app_snack_bar.dart';
 import 'package:home_function/workout/workout_stat_provider/workout_stat_notifier.dart';
-import 'package:home_function/workout_finish/workout_finish.dart';
-import 'package:home_function/workout_finish/workout_finish_provider.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish_provider.dart';
 
 class WorkoutFinishPage extends ConsumerStatefulWidget {
   final WorkoutFinish finish;
@@ -35,7 +36,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
   static const Color _line = Color(0xFF242428);
   static const Color _primaryText = Color(0xFFFFFFFF);
   static const Color _secondaryText = Color(0xFF9B9BA1);
-  static const Color _accent = Color(0xFF5DADEC);
+  // static const Color _accent = Color(0xFF5DADEC);
   static const Color _danger = Color(0xFFE85D5D);
 
   static const int _maxImageCount = 6;
@@ -724,7 +725,9 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
   }
 
   double _safeDistanceKm(double distanceMeters) {
-    if (distanceMeters.isNaN || distanceMeters.isInfinite || distanceMeters < 0) {
+    if (distanceMeters.isNaN ||
+        distanceMeters.isInfinite ||
+        distanceMeters < 0) {
       return 0.0;
     }
 
@@ -797,6 +800,10 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
               _FinishHero(
                 km: km,
                 timeText: timeText,
+              ),
+              const SizedBox(height: 16),
+              _RoutePreviewMap(
+                routePoints: finish.routePoints,
               ),
               const SizedBox(height: 16),
               _PhotoAddButton(
@@ -927,6 +934,296 @@ class _FinishHero extends StatelessWidget {
               fontSize: 14,
               fontWeight: FontWeight.w600,
               height: 1.35,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _RoutePreviewMap extends StatefulWidget {
+  final List<LatLng> routePoints;
+
+  const _RoutePreviewMap({
+    required this.routePoints,
+  });
+
+  @override
+  State<_RoutePreviewMap> createState() => _RoutePreviewMapState();
+}
+
+class _RoutePreviewMapState extends State<_RoutePreviewMap> {
+  GoogleMapController? _controller;
+
+  static const Color _surface = Color(0xFF0B0B0D);
+  static const Color _line = Color(0xFF242428);
+  static const Color _primaryText = Color(0xFFFFFFFF);
+  static const Color _secondaryText = Color(0xFF9B9BA1);
+  static const Color _accent = Color(0xFF5DADEC);
+
+  static const LatLng _defaultCenter = LatLng(35.8714, 128.6014);
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  void didUpdateWidget(covariant _RoutePreviewMap oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.routePoints.length != widget.routePoints.length) {
+      _fitCameraToRoute();
+    }
+  }
+
+  Future<void> _fitCameraToRoute() async {
+    final controller = _controller;
+    final points = widget.routePoints;
+
+    if (controller == null || points.isEmpty) return;
+
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+
+    if (!mounted) return;
+
+    try {
+      if (points.length == 1) {
+        await controller.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: points.first,
+              zoom: 16,
+            ),
+          ),
+        );
+        return;
+      }
+
+      final bounds = _boundsFromLatLngList(points);
+
+      final sameLat = bounds.southwest.latitude == bounds.northeast.latitude;
+      final sameLng = bounds.southwest.longitude == bounds.northeast.longitude;
+
+      if (sameLat && sameLng) {
+        await controller.animateCamera(
+          CameraUpdate.newCameraPosition(
+            CameraPosition(
+              target: points.last,
+              zoom: 16,
+            ),
+          ),
+        );
+        return;
+      }
+
+      await controller.animateCamera(
+        CameraUpdate.newLatLngBounds(
+          bounds,
+          46,
+        ),
+      );
+    } catch (_) {
+      if (!mounted) return;
+
+      await controller.animateCamera(
+        CameraUpdate.newCameraPosition(
+          CameraPosition(
+            target: points.last,
+            zoom: 16,
+          ),
+        ),
+      );
+    }
+  }
+
+  LatLngBounds _boundsFromLatLngList(List<LatLng> points) {
+    double minLat = points.first.latitude;
+    double maxLat = points.first.latitude;
+    double minLng = points.first.longitude;
+    double maxLng = points.first.longitude;
+
+    for (final point in points) {
+      if (point.latitude < minLat) minLat = point.latitude;
+      if (point.latitude > maxLat) maxLat = point.latitude;
+      if (point.longitude < minLng) minLng = point.longitude;
+      if (point.longitude > maxLng) maxLng = point.longitude;
+    }
+
+    return LatLngBounds(
+      southwest: LatLng(minLat, minLng),
+      northeast: LatLng(maxLat, maxLng),
+    );
+  }
+
+  Set<Polyline> _buildPolylines() {
+    final points = widget.routePoints;
+
+    if (points.length < 2) {
+      return {};
+    }
+
+    return {
+      Polyline(
+        polylineId: const PolylineId('finish_route'),
+        points: points,
+        width: 6,
+        color: _accent,
+        startCap: Cap.roundCap,
+        endCap: Cap.roundCap,
+        jointType: JointType.round,
+      ),
+    };
+  }
+
+  Set<Marker> _buildMarkers() {
+    final points = widget.routePoints;
+
+    if (points.isEmpty) {
+      return {};
+    }
+
+    final markers = <Marker>{
+      Marker(
+        markerId: const MarkerId('start'),
+        position: points.first,
+        infoWindow: const InfoWindow(title: '시작'),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          BitmapDescriptor.hueAzure,
+        ),
+      ),
+    };
+
+    if (points.length >= 2) {
+      markers.add(
+        Marker(
+          markerId: const MarkerId('finish'),
+          position: points.last,
+          infoWindow: const InfoWindow(title: '종료'),
+          icon: BitmapDescriptor.defaultMarkerWithHue(
+            BitmapDescriptor.hueRed,
+          ),
+        ),
+      );
+    }
+
+    return markers;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final points = widget.routePoints;
+
+    if (points.isEmpty) {
+      return const _SectionFrame(
+        padding: EdgeInsets.symmetric(
+          vertical: 28,
+          horizontal: 18,
+        ),
+        child: Column(
+          children: [
+            Icon(
+              Icons.map_outlined,
+              size: 40,
+              color: _secondaryText,
+            ),
+            SizedBox(height: 12),
+            Text(
+              '경로 기록이 없습니다',
+              style: TextStyle(
+                color: _primaryText,
+                fontSize: 15,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+            SizedBox(height: 6),
+            Text(
+              'GPS 경로가 충분히 기록되지 않았습니다.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: _secondaryText,
+                fontSize: 13,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
+    final initialTarget = points.isNotEmpty ? points.first : _defaultCenter;
+
+    return Container(
+      width: double.infinity,
+      height: 230,
+      decoration: BoxDecoration(
+        color: _surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: _line,
+          width: 0.8,
+        ),
+      ),
+      clipBehavior: Clip.antiAlias,
+      child: Stack(
+        children: [
+          GoogleMap(
+            initialCameraPosition: CameraPosition(
+              target: initialTarget,
+              zoom: 16,
+            ),
+            onMapCreated: (controller) {
+              _controller = controller;
+              _fitCameraToRoute();
+            },
+            polylines: _buildPolylines(),
+            markers: _buildMarkers(),
+            myLocationEnabled: false,
+            myLocationButtonEnabled: false,
+            zoomControlsEnabled: false,
+            mapToolbarEnabled: false,
+            compassEnabled: false,
+            scrollGesturesEnabled: false,
+            zoomGesturesEnabled: false,
+            rotateGesturesEnabled: false,
+            tiltGesturesEnabled: false,
+          ),
+          Positioned(
+            left: 12,
+            top: 12,
+            child: Container(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 10,
+                vertical: 7,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.black.withAlpha(170),
+                borderRadius: BorderRadius.circular(999),
+                border: Border.all(
+                  color: Colors.white.withAlpha(18),
+                  width: 0.8,
+                ),
+              ),
+              child: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.route_outlined,
+                    size: 15,
+                    color: _accent,
+                  ),
+                  SizedBox(width: 5),
+                  Text(
+                    '이동 경로',
+                    style: TextStyle(
+                      color: _primaryText,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],

@@ -19,9 +19,10 @@ import 'package:home_function/follow/follow_following_list/FollowUserListPage.da
 import 'package:home_function/map/map_page.dart';
 import 'package:home_function/ranking/run_ranking_page.dart';
 import 'package:home_function/workout/workout_UI/workout_page.dart';
+import 'package:home_function/workout_finish/feed_List/feed_list_page.dart';
 import 'package:home_function/workout_finish/feed/feed_page.dart';
-import 'package:home_function/workout_finish/workout_finish.dart';
-import 'package:home_function/workout_finish/workout_finish_page.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish_page.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 import 'package:home_function/Home_Page/settings/block/block_user.dart';
 
@@ -142,6 +143,13 @@ GoRouter goRouter(Ref ref) {
           return HomePage(userId: userId);
         },
       ),
+
+      /// ======================
+      /// 단일 운동 피드
+      /// ======================
+      ///
+      /// 기존 화면 유지.
+      /// WorkoutFinish 객체 하나를 extra로 받아서 단일 피드 상세를 보여줌.
       GoRoute(
         path: '/workoutFeed',
         builder: (context, state) {
@@ -168,6 +176,55 @@ GoRouter goRouter(Ref ref) {
           );
         },
       ),
+
+      /// ======================
+      /// 운동 피드 리스트
+      /// ======================
+      ///
+      /// 인스타그램처럼 특정 게시글을 눌렀을 때,
+      /// 해당 유저의 운동 기록 리스트 화면으로 이동.
+      ///
+      /// extra 예시:
+      /// {
+      ///   'userId': '작성자 uid',
+      ///   'initialWorkoutId': '처음 보여줄 운동 기록 id',
+      /// }
+      GoRoute(
+        path: '/workoutFeedList',
+        builder: (context, state) {
+          final extra = state.extra;
+
+          if (extra is! Map) {
+            return const Scaffold(
+              body: Center(
+                child: Text('운동 피드 정보가 없습니다.'),
+              ),
+            );
+          }
+
+          final userIdValue = extra['userId'];
+          final initialWorkoutIdValue = extra['initialWorkoutId'];
+
+          final userId = userIdValue is String ? userIdValue.trim() : '';
+          final initialWorkoutId = initialWorkoutIdValue is String
+              ? initialWorkoutIdValue.trim()
+              : '';
+
+          if (userId.isEmpty || initialWorkoutId.isEmpty) {
+            return const Scaffold(
+              body: Center(
+                child: Text('운동 피드 정보가 없습니다.'),
+              ),
+            );
+          }
+
+          return WorkoutFeedListPage(
+            userId: userId,
+            initialWorkoutId: initialWorkoutId,
+          );
+        },
+      ),
+
       GoRoute(
         path: '/settings',
         builder: (context, state) {

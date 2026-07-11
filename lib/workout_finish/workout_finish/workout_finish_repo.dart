@@ -1,11 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
-import 'package:home_function/workout_finish/workout_finish.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish.dart';
 
 abstract class WorkoutFinishRepo {
   Future<void> uploadWorkoutFinish({
     required WorkoutFinish workoutFinish,
     required List<String> imageUrls,
+    String? thumbnailUrl,
   });
 
   Future<void> deleteWorkoutFinish({
@@ -15,6 +16,7 @@ abstract class WorkoutFinishRepo {
   Future<void> updateWorkoutFinishImages({
     required WorkoutFinish workoutFinish,
     required List<String> imageUrls,
+    String? thumbnailUrl,
   });
 
   Future<WorkoutFinish?> getTodayWorkoutRecord({
@@ -33,6 +35,24 @@ abstract class WorkoutFinishRepo {
   Future<List<WorkoutFinish>> getFeedWorkoutFinish({
     required String userId,
     String? viewerUid,
+  });
+
+  /// ======================
+  /// 피드 리스트 화면용
+  /// ======================
+  ///
+  /// 인스타그램처럼 특정 운동 기록을 눌렀을 때,
+  /// 해당 유저의 운동 기록들을 세로 리스트로 연속해서 보여주기 위한 메서드입니다.
+  Future<List<WorkoutFinish>> getFeedListWorkoutFinish({
+    required String userId,
+    String? viewerUid,
+    int limit = 60,
+  });
+
+  Future<List<WorkoutFinish>> getProfileWorkoutGrid({
+    required String userId,
+    String? viewerUid,
+    int limit = 60,
   });
 
   Future<int> getWorkoutCount({
@@ -88,7 +108,9 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
     required String ownerUid,
     int? limit,
   }) async {
-    final hiddenContentIds = viewerUid == null
+    final isOwnerViewingOwnFeed = viewerUid != null && viewerUid == ownerUid;
+
+    final hiddenContentIds = viewerUid == null || isOwnerViewingOwnFeed
         ? <String>{}
         : await _getHiddenContentIds(
             viewerUid: viewerUid,
@@ -107,8 +129,6 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
         ...data,
         'workoutId': doc.id,
       });
-
-      final isOwnerViewingOwnFeed = viewerUid != null && viewerUid == ownerUid;
 
       if (!isOwnerViewingOwnFeed &&
           _isHiddenByViewer(
@@ -132,6 +152,7 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
   Future<void> uploadWorkoutFinish({
     required WorkoutFinish workoutFinish,
     required List<String> imageUrls,
+    String? thumbnailUrl,
   }) async {
     final docRef = _db.collection('workoutFinish').doc();
 
@@ -139,6 +160,7 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
         .copyWith(
           workoutId: docRef.id,
           workoutImagesUrl: imageUrls,
+          workoutThumbnailUrl: thumbnailUrl,
           likesCount: 0,
           commentsCount: 0,
         )
@@ -153,6 +175,7 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
       'workoutId': docRef.id,
       'userId': workoutFinish.userId,
       'workoutImagesUrl': imageUrls,
+      'workoutThumbnailUrl': thumbnailUrl,
       'timestamp': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -180,6 +203,7 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
   Future<void> updateWorkoutFinishImages({
     required WorkoutFinish workoutFinish,
     required List<String> imageUrls,
+    String? thumbnailUrl,
   }) async {
     final workoutId = workoutFinish.workoutId;
 
@@ -187,10 +211,16 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
       throw ArgumentError('WorkoutFinish workoutId is invalid');
     }
 
-    await _db.collection('workoutFinish').doc(workoutId).update({
+    final updateData = <String, dynamic>{
       'workoutImagesUrl': imageUrls,
       'updatedAt': FieldValue.serverTimestamp(),
-    });
+    };
+
+    if (thumbnailUrl != null) {
+      updateData['workoutThumbnailUrl'] = thumbnailUrl;
+    }
+
+    await _db.collection('workoutFinish').doc(workoutId).update(updateData);
   }
 
   @override
@@ -272,17 +302,57 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
   Future<List<WorkoutFinish>> getFeedWorkoutFinish({
     required String userId,
     String? viewerUid,
+  }) {
+    return getFeedListWorkoutFinish(
+      userId: userId,
+      viewerUid: viewerUid,
+      limit: 60,
+    );
+  }
+
+  @override
+  Future<List<WorkoutFinish>> getFeedListWorkoutFinish({
+    required String userId,
+    String? viewerUid,
+    int limit = 60,
   }) async {
+    final safeLimit = limit <= 0 ? 60 : limit;
+
     final snap = await _db
         .collection('workoutFinish')
         .where('userId', isEqualTo: userId)
         .orderBy('timestamp', descending: true)
+        .limit(safeLimit)
         .get();
 
     return _filterVisibleWorkouts(
       docs: snap.docs,
       viewerUid: viewerUid,
       ownerUid: userId,
+      limit: safeLimit,
+    );
+  }
+
+  @override
+  Future<List<WorkoutFinish>> getProfileWorkoutGrid({
+    required String userId,
+    String? viewerUid,
+    int limit = 60,
+  }) async {
+    final safeLimit = limit <= 0 ? 60 : limit;
+
+    final snap = await _db
+        .collection('workoutFinish')
+        .where('userId', isEqualTo: userId)
+        .orderBy('timestamp', descending: true)
+        .limit(safeLimit)
+        .get();
+
+    return _filterVisibleWorkouts(
+      docs: snap.docs,
+      viewerUid: viewerUid,
+      ownerUid: userId,
+      limit: safeLimit,
     );
   }
 

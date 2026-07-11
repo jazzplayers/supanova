@@ -1,7 +1,7 @@
 name: home_function
 description: "A new Flutter project."
 publish_to: 'none'
-version: 0.1.0+2
+version: 0.1.0+9
 
 environment:
   sdk: ^3.11.0
@@ -37,6 +37,7 @@ dependencies:
   url_launcher: ^6.3.2
   flutter_image_compress: ^2.4.0
   flutter_native_splash: ^2.4.7
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:

@@ -1,6 +1,6 @@
 // GENERATED CODE - DO NOT MODIFY BY HAND
 
-part of 'workout_finish.dart';
+part of 'workout_finish/workout_finish.dart';
 
 // **************************************************************************
 // JsonSerializableGenerator
@@ -19,6 +19,7 @@ _WorkoutFinish _$WorkoutFinishFromJson(Map<String, dynamic> json) =>
               ?.map((e) => e as String)
               .toList() ??
           const <String>[],
+      workoutThumbnailUrl: json['workoutThumbnailUrl'] as String?,
       likesCount: (json['likesCount'] as num?)?.toInt() ?? 0,
       commentsCount: (json['commentsCount'] as num?)?.toInt() ?? 0,
       routePoints: json['routePoints'] == null
@@ -44,6 +45,7 @@ Map<String, dynamic> _$WorkoutFinishToJson(_WorkoutFinish instance) =>
       'speedKmh': instance.speedKmh,
       'paceMinPerKm': instance.paceMinPerKm,
       'workoutImagesUrl': instance.workoutImagesUrl,
+      'workoutThumbnailUrl': instance.workoutThumbnailUrl,
       'likesCount': instance.likesCount,
       'commentsCount': instance.commentsCount,
       'routePoints': const LatLngListConverter().toJson(instance.routePoints),

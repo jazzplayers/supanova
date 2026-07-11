@@ -1,5 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:home_function/workout_finish/feed/like_Controller/like_provider.dart';
+import 'package:home_function/workout_finish/feed/widget/like_Controller/like_provider.dart';
 
 class LikeController extends AsyncNotifier<void> {
   @override

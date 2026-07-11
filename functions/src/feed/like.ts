@@ -9,7 +9,7 @@ const db = admin.firestore();
 
 export const feedLike = onCall(
   {
-    region: "us-central1",
+    region: "asia-northeast3",
   },
   async (request) => {
     const auth = request.auth;

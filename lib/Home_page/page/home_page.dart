@@ -14,7 +14,7 @@ import 'package:home_function/block/blockUser_provider.dart';
 import 'package:home_function/calendar/calendar_page.dart';
 import 'package:home_function/core/firebase.dart';
 import 'package:home_function/reports/reports_provider.dart';
-import 'package:home_function/workout_finish/workout_finish_provider.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish_provider.dart';
 
 class HomePage extends ConsumerStatefulWidget {
   final String userId;

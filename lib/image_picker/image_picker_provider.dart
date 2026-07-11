@@ -17,6 +17,9 @@ ImageUploadService imageUploadService(Ref ref) {
   return ImageUploadServiceImpl();
 }
 
+/// ======================
+/// 단일 이미지 업로드
+/// ======================
 @riverpod
 Future<String> uploadImageFile(
   Ref ref, {
@@ -31,17 +34,20 @@ Future<String> uploadImageFile(
   );
 }
 
+/// ======================
+/// 여러 이미지 업로드
+/// ======================
 @riverpod
 Future<List<String>> uploadImageFiles(
   Ref ref, {
   required List<File> files,
   required String path,
 }) {
-  final imageUploadService = ref.read(imageUploadServiceProvider);
-
   if (files.isEmpty) {
     return Future.value([]);
   }
+
+  final imageUploadService = ref.read(imageUploadServiceProvider);
 
   return imageUploadService.uploadImageFiles(
     files: files,
@@ -49,58 +55,92 @@ Future<List<String>> uploadImageFiles(
   );
 }
 
+/// ======================
+/// 단일 이미지 삭제
+/// ======================
 @riverpod
 Future<void> deleteImageFile(
   Ref ref, {
   required String imageUrl,
 }) {
-  final imageUploadService = ref.read(imageUploadServiceProvider);
-
-  if (imageUrl.isEmpty) {
+  if (imageUrl.trim().isEmpty) {
     return Future.value();
   }
+
+  final imageUploadService = ref.read(imageUploadServiceProvider);
 
   return imageUploadService.deleteImageFile(
     imageUrl: imageUrl,
   );
 }
 
+/// ======================
+/// 여러 이미지 삭제
+/// ======================
 @riverpod
 Future<void> deleteImageFiles(
   Ref ref, {
   required List<String> imageUrls,
 }) {
-  final imageUploadService = ref.read(imageUploadServiceProvider);
+  final filteredUrls = imageUrls
+      .where((url) => url.trim().isNotEmpty)
+      .toList();
 
-  if (imageUrls.isEmpty) {
+  if (filteredUrls.isEmpty) {
     return Future.value();
   }
 
+  final imageUploadService = ref.read(imageUploadServiceProvider);
+
   return imageUploadService.deleteImageFiles(
-    imageUrls: imageUrls,
+    imageUrls: filteredUrls,
   );
 }
 
+/// ======================
+/// 운동 완료 이미지 선택 상태
+/// ======================
 @riverpod
 class WorkoutFinishImages extends _$WorkoutFinishImages {
+  static const int maxImageCount = 5;
+
   @override
   List<File> build() => [];
 
+  int get count => state.length;
+
+  int get remainingCount {
+    final remaining = maxImageCount - state.length;
+    return remaining < 0 ? 0 : remaining;
+  }
+
+  bool get canAddMore => state.length < maxImageCount;
+
+  bool get isEmpty => state.isEmpty;
+
+  bool get isNotEmpty => state.isNotEmpty;
+
   void setImages(List<File> files) {
-    state = [...files];
+    state = _normalizeFiles(files);
   }
 
   void addImage(File file) {
-    state = [...state, file];
+    if (!canAddMore) return;
+
+    state = _normalizeFiles([
+      ...state,
+      file,
+    ]);
   }
 
   void addImages(List<File> files) {
     if (files.isEmpty) return;
+    if (!canAddMore) return;
 
-    state = [
+    state = _normalizeFiles([
       ...state,
       ...files,
-    ];
+    ]);
   }
 
   void removeImage(int index) {
@@ -108,6 +148,7 @@ class WorkoutFinishImages extends _$WorkoutFinishImages {
 
     final copied = [...state];
     copied.removeAt(index);
+
     state = copied;
   }
 
@@ -117,5 +158,25 @@ class WorkoutFinishImages extends _$WorkoutFinishImages {
 
   void clear() {
     state = [];
+  }
+
+  List<File> _normalizeFiles(List<File> files) {
+    final result = <File>[];
+    final seenPaths = <String>{};
+
+    for (final file in files) {
+      if (seenPaths.contains(file.path)) {
+        continue;
+      }
+
+      seenPaths.add(file.path);
+      result.add(file);
+
+      if (result.length >= maxImageCount) {
+        break;
+      }
+    }
+
+    return result;
   }
 }

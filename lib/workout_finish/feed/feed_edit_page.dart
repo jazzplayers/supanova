@@ -1,12 +1,12 @@
 import 'dart:io';
 
+import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:image_picker/image_picker.dart';
 
 import 'package:home_function/image_picker/image_picker_provider.dart';
-import 'package:home_function/workout_finish/workout_finish.dart';
-import 'package:home_function/workout_finish/workout_finish_provider.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish_provider.dart';
 
 class FeedEditPage extends ConsumerStatefulWidget {
   final WorkoutFinish workoutFinish;
@@ -27,14 +27,14 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
   static const Color _primaryText = Color(0xFFF5F7FA);
   static const Color _secondaryText = Color(0xFF9CA3AF);
   static const Color _blue = Color(0xFF5DADEC);
-  // static const Color _danger = Color(0xFFFF5A5F);
 
-  final ImagePicker _picker = ImagePicker();
+  static const int _maxImageCount = 5;
 
   late final List<String> _originalImageUrls;
   late List<String> _imageUrls;
 
-  final List<XFile> _newImages = [];
+  /// 새로 추가한 이미지는 ImagePickerService에서 이미 압축된 File입니다.
+  final List<File> _newImages = [];
   final List<String> _deletedImageUrls = [];
 
   bool _isSaving = false;
@@ -47,35 +47,118 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
       widget.workoutFinish.workoutImagesUrl,
     );
 
-    _imageUrls = List<String>.from(
+    _imageUrls = _normalizeUrls(
       widget.workoutFinish.workoutImagesUrl,
     );
   }
 
-  Future<void> _pickImages() async {
-    final pickedImages = await _picker.pickMultiImage(
-      imageQuality: 85,
-    );
+  List<String> _normalizeUrls(List<String> urls) {
+    final result = <String>[];
+    final seen = <String>{};
 
-    if (pickedImages.isEmpty) return;
+    for (final url in urls) {
+      final trimmed = url.trim();
+
+      if (trimmed.isEmpty) continue;
+      if (seen.contains(trimmed)) continue;
+
+      seen.add(trimmed);
+      result.add(trimmed);
+    }
+
+    return result;
+  }
+
+  int get _currentImageCount => _imageUrls.length + _newImages.length;
+
+  int get _remainingImageCount {
+    final remaining = _maxImageCount - _currentImageCount;
+    return remaining < 0 ? 0 : remaining;
+  }
+
+  bool get _hasImages => _imageUrls.isNotEmpty || _newImages.isNotEmpty;
+
+  String? get _thumbnailUrl {
+    final thumbnailUrl = widget.workoutFinish.workoutThumbnailUrl?.trim() ?? '';
+
+    if (_isValidNetworkImageUrl(thumbnailUrl)) {
+      return thumbnailUrl;
+    }
+
+    return null;
+  }
+
+  bool _isValidNetworkImageUrl(String? url) {
+    final value = url?.trim();
+
+    if (value == null || value.isEmpty) return false;
+
+    return value.startsWith('http://') || value.startsWith('https://');
+  }
+
+  void _showMessage(
+    String message, {
+    bool isError = false,
+  }) {
+    if (!mounted) return;
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: isError ? const Color(0xFFE85D5D) : null,
+      ),
+    );
+  }
+
+  Future<void> _pickImages() async {
+    if (_isSaving) return;
+
+    final remaining = _remainingImageCount;
+
+    if (remaining <= 0) {
+      _showMessage('사진은 최대 $_maxImageCount장까지 등록할 수 있습니다.');
+      return;
+    }
+
+    final pickedFiles = await ref
+        .read(imagePickerServiceProvider)
+        .pickMultipleImages();
+
+    if (!mounted) return;
+    if (pickedFiles.isEmpty) return;
+
+    final limitedFiles = pickedFiles.take(remaining).toList();
 
     setState(() {
-      _newImages.addAll(pickedImages);
+      _newImages.addAll(limitedFiles);
     });
+
+    if (pickedFiles.length > remaining) {
+      _showMessage('사진은 최대 $_maxImageCount장까지 등록할 수 있어요.');
+    }
   }
 
   void _removeOldImage(String imageUrl) {
-    setState(() {
-      _imageUrls.remove(imageUrl);
+    if (_isSaving) return;
 
-      if (_originalImageUrls.contains(imageUrl) &&
-          !_deletedImageUrls.contains(imageUrl)) {
-        _deletedImageUrls.add(imageUrl);
+    final normalizedUrl = imageUrl.trim();
+
+    if (normalizedUrl.isEmpty) return;
+
+    setState(() {
+      _imageUrls.remove(normalizedUrl);
+
+      if (_originalImageUrls.contains(normalizedUrl) &&
+          !_deletedImageUrls.contains(normalizedUrl)) {
+        _deletedImageUrls.add(normalizedUrl);
       }
     });
   }
 
-  void _removeNewImage(XFile image) {
+  void _removeNewImage(File image) {
+    if (_isSaving) return;
+
     setState(() {
       _newImages.removeWhere((item) => item.path == image.path);
     });
@@ -86,13 +169,9 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
   }) async {
     if (_newImages.isEmpty) return [];
 
-    final files = _newImages.map((image) {
-      return File(image.path);
-    }).toList();
-
     return ref.read(
       uploadImageFilesProvider(
-        files: files,
+        files: _newImages,
         path: 'workoutFinish/${widget.workoutFinish.userId}/$workoutId/images',
       ).future,
     );
@@ -126,10 +205,10 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
         workoutId: workoutId,
       );
 
-      final updatedImageUrls = [
+      final updatedImageUrls = _normalizeUrls([
         ..._imageUrls,
         ...uploadedUrls,
-      ];
+      ]);
 
       await ref.read(
         updateWorkoutFinishImagesProvider(
@@ -159,12 +238,7 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
         ),
       );
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('게시글이 수정되었습니다.'),
-          behavior: SnackBarBehavior.floating,
-        ),
-      );
+      _showMessage('게시글이 수정되었습니다.');
 
       Navigator.of(context).pop(updatedWorkoutFinish);
     } catch (e, st) {
@@ -173,11 +247,9 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
 
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('수정 중 오류가 발생했습니다: $e'),
-          behavior: SnackBarBehavior.floating,
-        ),
+      _showMessage(
+        '수정 중 오류가 발생했습니다: $e',
+        isError: true,
       );
     } finally {
       if (mounted) {
@@ -188,10 +260,10 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
     }
   }
 
-  bool get _hasImages => _imageUrls.isNotEmpty || _newImages.isNotEmpty;
-
   @override
   Widget build(BuildContext context) {
+    final imageCountText = '$_currentImageCount/$_maxImageCount';
+
     return Scaffold(
       backgroundColor: _bg,
       appBar: AppBar(
@@ -234,9 +306,9 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const _SectionTitle(
+                _SectionTitle(
                   title: '사진',
-                  subtitle: '업로드된 사진을 삭제하거나 새 사진을 추가할 수 있습니다.',
+                  subtitle: '업로드된 사진을 삭제하거나 새 사진을 추가할 수 있습니다. $imageCountText',
                 ),
                 const SizedBox(height: 14),
                 if (_hasImages)
@@ -254,8 +326,13 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
                       if (index < _imageUrls.length) {
                         final imageUrl = _imageUrls[index];
 
+                        /// 첫 번째 기존 이미지는 대표 썸네일이 있으면 편집 화면 미리보기에도
+                        /// 썸네일을 먼저 사용합니다. 삭제 대상은 원본 imageUrl 그대로 유지합니다.
+                        final displayUrl = index == 0 ? _thumbnailUrl : null;
+
                         return _EditableImageTile.network(
                           imageUrl: imageUrl,
+                          displayImageUrl: displayUrl,
                           onRemove: _isSaving
                               ? null
                               : () => _removeOldImage(imageUrl),
@@ -266,7 +343,7 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
                       final image = _newImages[newImageIndex];
 
                       return _EditableImageTile.file(
-                        file: File(image.path),
+                        file: image,
                         onRemove:
                             _isSaving ? null : () => _removeNewImage(image),
                       );
@@ -307,13 +384,22 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
                   width: double.infinity,
                   height: 52,
                   child: OutlinedButton.icon(
-                    onPressed: _isSaving ? null : _pickImages,
+                    onPressed: _isSaving || _remainingImageCount <= 0
+                        ? null
+                        : _pickImages,
                     icon: const Icon(Icons.add_photo_alternate_outlined),
-                    label: const Text('사진 추가'),
+                    label: Text(
+                      _remainingImageCount <= 0
+                          ? '사진 최대 $_maxImageCount장'
+                          : '사진 추가',
+                    ),
                     style: OutlinedButton.styleFrom(
                       foregroundColor: _blue,
+                      disabledForegroundColor: _secondaryText,
                       side: BorderSide(
-                        color: _blue.withValues(alpha: 0.6),
+                        color: _remainingImageCount <= 0
+                            ? _secondaryText.withValues(alpha: 0.35)
+                            : _blue.withValues(alpha: 0.6),
                       ),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(18),
@@ -362,75 +448,173 @@ class _FeedEditPageState extends ConsumerState<FeedEditPage> {
 
 class _EditableImageTile extends StatelessWidget {
   final String? imageUrl;
+  final String? displayImageUrl;
   final File? file;
   final VoidCallback? onRemove;
 
   const _EditableImageTile.network({
     required this.imageUrl,
+    this.displayImageUrl,
     required this.onRemove,
   }) : file = null;
 
   const _EditableImageTile.file({
     required this.file,
     required this.onRemove,
-  }) : imageUrl = null;
+  })  : imageUrl = null,
+        displayImageUrl = null;
 
   static const Color _cardSoft = Color(0xFF1D2630);
   static const Color _danger = Color(0xFFFF5A5F);
   static const Color _secondaryText = Color(0xFF9CA3AF);
 
+  bool _isValidNetworkImageUrl(String? url) {
+    final value = url?.trim();
+
+    if (value == null || value.isEmpty) return false;
+
+    return value.startsWith('http://') || value.startsWith('https://');
+  }
+
   @override
   Widget build(BuildContext context) {
     final radius = BorderRadius.circular(18);
 
-    return Stack(
-      children: [
-        ClipRRect(
-          borderRadius: radius,
-          child: Container(
-            color: _cardSoft,
-            width: double.infinity,
-            height: double.infinity,
-            child: file != null
-                ? Image.file(
-                    file!,
-                    fit: BoxFit.cover,
-                  )
-                : Image.network(
-                    imageUrl!,
-                    fit: BoxFit.cover,
-                    errorBuilder: (context, error, stackTrace) {
-                      return const Center(
-                        child: Icon(
-                          Icons.broken_image_outlined,
-                          color: _secondaryText,
-                        ),
-                      );
-                    },
-                  ),
-          ),
-        ),
-        Positioned(
-          top: 6,
-          right: 6,
-          child: GestureDetector(
-            onTap: onRemove,
-            child: Container(
-              width: 28,
-              height: 28,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.65),
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(
-                Icons.close_rounded,
-                color: _danger,
-                size: 18,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final devicePixelRatio = MediaQuery.of(context).devicePixelRatio;
+        final rawCacheSize = constraints.maxWidth * devicePixelRatio;
+
+        final cacheSize = rawCacheSize.isFinite && rawCacheSize > 0
+            ? rawCacheSize.round().clamp(180, 520)
+            : 320;
+
+        return Stack(
+          children: [
+            ClipRRect(
+              borderRadius: radius,
+              child: Container(
+                color: _cardSoft,
+                width: double.infinity,
+                height: double.infinity,
+                child: file != null
+                    ? Image.file(
+                        file!,
+                        fit: BoxFit.cover,
+                        cacheWidth: cacheSize,
+                        cacheHeight: cacheSize,
+                        filterQuality: FilterQuality.low,
+                        errorBuilder: (context, error, stackTrace) {
+                          return const _ImageLoadFailedIcon();
+                        },
+                      )
+                    : _NetworkEditImagePreview(
+                        imageUrl: _isValidNetworkImageUrl(displayImageUrl)
+                            ? displayImageUrl!.trim()
+                            : imageUrl?.trim() ?? '',
+                        cacheSize: cacheSize,
+                      ),
               ),
             ),
+            Positioned(
+              top: 6,
+              right: 6,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onTap: onRemove,
+                child: Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.65),
+                    shape: BoxShape.circle,
+                  ),
+                  child: Icon(
+                    Icons.close_rounded,
+                    color: onRemove == null
+                        ? _secondaryText.withValues(alpha: 0.7)
+                        : _danger,
+                    size: 18,
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+class _NetworkEditImagePreview extends StatelessWidget {
+  const _NetworkEditImagePreview({
+    required this.imageUrl,
+    required this.cacheSize,
+  });
+
+  final String imageUrl;
+  final int cacheSize;
+
+  // static const Color _secondaryText = Color(0xFF9CA3AF);
+
+  bool get _isValidUrl {
+    final value = imageUrl.trim();
+
+    return value.startsWith('http://') || value.startsWith('https://');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_isValidUrl) {
+      return const _ImageLoadFailedIcon();
+    }
+
+    return CachedNetworkImage(
+      imageUrl: imageUrl,
+      fit: BoxFit.cover,
+      width: double.infinity,
+      height: double.infinity,
+      memCacheWidth: cacheSize,
+      memCacheHeight: cacheSize,
+      maxWidthDiskCache: cacheSize,
+      maxHeightDiskCache: cacheSize,
+      fadeInDuration: const Duration(milliseconds: 80),
+      fadeOutDuration: const Duration(milliseconds: 60),
+      useOldImageOnUrlChange: true,
+      placeholder: (context, url) {
+        return const Center(
+          child: SizedBox(
+            width: 16,
+            height: 16,
+            child: CircularProgressIndicator(
+              color: Color(0xFF5DADEC),
+              strokeWidth: 1.8,
+            ),
           ),
-        ),
-      ],
+        );
+      },
+      errorWidget: (context, url, error) {
+        debugPrint('FeedEditPage image load failed: $error');
+        debugPrint('FeedEditPage image url: $url');
+
+        return const _ImageLoadFailedIcon();
+      },
+    );
+  }
+}
+
+class _ImageLoadFailedIcon extends StatelessWidget {
+  const _ImageLoadFailedIcon();
+
+  static const Color _secondaryText = Color(0xFF9CA3AF);
+
+  @override
+  Widget build(BuildContext context) {
+    return const Center(
+      child: Icon(
+        Icons.broken_image_outlined,
+        color: _secondaryText,
+      ),
     );
   }
 }
@@ -473,4 +657,4 @@ class _SectionTitle extends StatelessWidget {
       ],
     );
   }
-}
+} 

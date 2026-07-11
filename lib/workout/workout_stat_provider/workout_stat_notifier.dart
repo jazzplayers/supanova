@@ -5,7 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:home_function/workout/workout_foreground/foreground_workout_service.dart';
 import 'package:home_function/workout/workout_model/workout_stats_state.dart';
-import 'package:home_function/workout_finish/workout_finish.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish.dart';
 import 'package:riverpod_annotation/riverpod_annotation.dart';
 
 part 'workout_stat_notifier.g.dart';

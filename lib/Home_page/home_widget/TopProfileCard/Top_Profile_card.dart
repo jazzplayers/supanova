@@ -9,7 +9,9 @@ import 'package:home_function/follow/firestore/repo_provider.dart';
 import 'package:home_function/follow/follow_service/follow_provider.dart';
 import 'package:home_function/image_picker/image_picker_provider.dart';
 import 'package:home_function/widget/app_snack_bar.dart';
-import 'package:home_function/workout_finish/workout_finish_provider.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish_provider.dart';
+
+import 'package:home_function/Home_page/home_widget/TopProfileCard/widget/workout.dart';
 
 class TopProfileCard extends ConsumerStatefulWidget {
   final String userId;
@@ -863,14 +865,47 @@ class _ProfileStatsRow extends StatelessWidget {
     );
   }
 
+  Future<void> _showWorkoutGridSheet(BuildContext context) async {
+    await showModalBottomSheet<void>(
+      context: context,
+      useRootNavigator: true,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black.withAlpha(180),
+      builder: (sheetContext) {
+        return DraggableScrollableSheet(
+          initialChildSize: 0.82,
+          minChildSize: 0.45,
+          maxChildSize: 0.94,
+          expand: false,
+          builder: (context, scrollController) {
+            return WorkoutGridSheet(
+              userId: userId,
+              scrollController: scrollController,
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Row(
       children: [
         Expanded(
-          child: ProfileStatItem(
-            value: _countText(workoutCountAsync),
-            label: '운동',
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: isRestricted
+                ? null
+                : () {
+                    _showWorkoutGridSheet(context);
+                  },
+            child: ProfileStatItem(
+              value: _countText(workoutCountAsync),
+              label: '운동',
+            ),
           ),
         ),
         Expanded(

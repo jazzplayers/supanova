@@ -5,8 +5,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:table_calendar/table_calendar.dart';
 
-import 'package:home_function/workout_finish/workout_finish.dart';
-import 'package:home_function/workout_finish/workout_finish_provider.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish.dart';
+import 'package:home_function/workout_finish/workout_finish/workout_finish_provider.dart';
 
 class WorkoutCalendarPage extends ConsumerStatefulWidget {
   final String userId;

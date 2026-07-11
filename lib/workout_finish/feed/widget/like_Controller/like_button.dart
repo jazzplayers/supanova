@@ -3,7 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:home_function/auth/model/auth/auth_provider.dart';
 import 'like_provider.dart';
 
-class LikeButton extends ConsumerWidget {
+class LikeButton extends ConsumerStatefulWidget {
   final String myUid;
   final String workoutFinishId;
 
@@ -14,36 +14,142 @@ class LikeButton extends ConsumerWidget {
   });
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final likeCountAsync = ref.watch(likeCountProvider(workoutFinishId));
-    final isLikedAsync = ref.watch(isLikedProvider(workoutFinishId, myUid));
+  ConsumerState<LikeButton> createState() => _LikeButtonState();
+}
 
-    final likeController = ref.read(likeControllerProvider.notifier);
+class _LikeButtonState extends ConsumerState<LikeButton> {
+  bool? _optimisticIsLiked;
+  int? _optimisticLikesCount;
+  bool _isSubmitting = false;
 
-    final isLiked = isLikedAsync.value ?? false;
-    final likesCount = likeCountAsync.value ?? 0;
+  void _syncFromServer({
+    required bool? serverIsLiked,
+    required int? serverLikesCount,
+  }) {
+    if (_isSubmitting) return;
+
+    if (serverIsLiked != null && _optimisticIsLiked != serverIsLiked) {
+      _optimisticIsLiked = serverIsLiked;
+    }
+
+    if (serverLikesCount != null && _optimisticLikesCount != serverLikesCount) {
+      _optimisticLikesCount = serverLikesCount;
+    }
+  }
+
+  Future<void> _toggleLike({
+    required bool currentIsLiked,
+    required int currentLikesCount,
+  }) async {
+    if (_isSubmitting) return;
+
+    final previousIsLiked = currentIsLiked;
+    final previousLikesCount = currentLikesCount;
+
+    final nextIsLiked = !currentIsLiked;
+    final nextLikesCount = nextIsLiked
+        ? currentLikesCount + 1
+        : (currentLikesCount - 1).clamp(0, 1 << 31);
+
+    setState(() {
+      _isSubmitting = true;
+      _optimisticIsLiked = nextIsLiked;
+      _optimisticLikesCount = nextLikesCount;
+    });
+
+    try {
+      final likeController = ref.read(likeControllerProvider.notifier);
+
+      if (nextIsLiked) {
+        await likeController.like(widget.workoutFinishId);
+      } else {
+        await likeController.unlike(widget.workoutFinishId);
+      }
+
+      ref.invalidate(isLikedProvider(widget.workoutFinishId, widget.myUid));
+      ref.invalidate(likeCountProvider(widget.workoutFinishId));
+      ref.invalidate(likedUserIdsProvider(widget.workoutFinishId));
+
+      if (!mounted) return;
+
+      setState(() {
+        _isSubmitting = false;
+      });
+    } catch (e, st) {
+      debugPrint('Error toggling like: $e');
+      debugPrintStack(stackTrace: st);
+
+      if (!mounted) return;
+
+      setState(() {
+        _isSubmitting = false;
+        _optimisticIsLiked = previousIsLiked;
+        _optimisticLikesCount = previousLikesCount;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('좋아요 처리 중 오류가 발생했습니다.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final likeCountAsync = ref.watch(
+      likeCountProvider(widget.workoutFinishId),
+    );
+
+    final isLikedAsync = ref.watch(
+      isLikedProvider(widget.workoutFinishId, widget.myUid),
+    );
+
+    final serverIsLiked = isLikedAsync.value;
+    final serverLikesCount = likeCountAsync.value;
+
+    _syncFromServer(
+      serverIsLiked: serverIsLiked,
+      serverLikesCount: serverLikesCount,
+    );
+
+    final isLiked = _optimisticIsLiked ?? serverIsLiked ?? false;
+    final likesCount = _optimisticLikesCount ?? serverLikesCount ?? 0;
 
     return Row(
+      mainAxisSize: MainAxisSize.min,
       children: [
-        IconButton(
-          onPressed: () async {
-            try {
-              if (isLiked) {
-                await likeController.unlike(workoutFinishId);
-              } else {
-                await likeController.like(workoutFinishId);
-              }
-            } catch (e, st) {
-              debugPrint('Error toggling like: $e');
-              debugPrintStack(stackTrace: st);
-            }
-          },
-          icon: Icon(
-            isLiked ? Icons.favorite : Icons.favorite_border,
-            color: isLiked ? Colors.red : Colors.white70,
+        AnimatedScale(
+          scale: isLiked ? 1.08 : 1.0,
+          duration: const Duration(milliseconds: 120),
+          curve: Curves.easeOutCubic,
+          child: IconButton(
+            visualDensity: VisualDensity.compact,
+            onPressed: () {
+              _toggleLike(
+                currentIsLiked: isLiked,
+                currentLikesCount: likesCount,
+              );
+            },
+            icon: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 140),
+              transitionBuilder: (child, animation) {
+                return ScaleTransition(
+                  scale: animation,
+                  child: child,
+                );
+              },
+              child: Icon(
+                isLiked ? Icons.favorite : Icons.favorite_border,
+                key: ValueKey(isLiked),
+                color: isLiked ? Colors.red : Colors.white70,
+              ),
+            ),
           ),
         ),
         GestureDetector(
+          behavior: HitTestBehavior.opaque,
           onTap: () {
             showModalBottomSheet(
               context: context,
@@ -56,17 +162,27 @@ class LikeButton extends ConsumerWidget {
               ),
               builder: (_) {
                 return LikedUserListSheet(
-                  workoutFinishId: workoutFinishId,
+                  workoutFinishId: widget.workoutFinishId,
                 );
               },
             );
           },
-          child: Text(
-            '$likesCount',
-            style: const TextStyle(
-              color: Colors.white70,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(
+              horizontal: 4,
+              vertical: 8,
+            ),
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 120),
+              child: Text(
+                '$likesCount',
+                key: ValueKey(likesCount),
+                style: const TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
             ),
           ),
         ),
@@ -120,7 +236,10 @@ class LikedUserListSheet extends ConsumerWidget {
                   return const Center(
                     child: Text(
                       '좋아요 누른 사람이 없습니다.',
-                      style: TextStyle(color: Colors.black87, fontSize: 16),
+                      style: TextStyle(
+                        color: Colors.black87,
+                        fontSize: 16,
+                      ),
                     ),
                   );
                 }
@@ -140,10 +259,11 @@ class LikedUserListSheet extends ConsumerWidget {
 
                         return ListTile(
                           leading: CircleAvatar(
-                            backgroundImage: profileImageUrl != null &&
-                                    profileImageUrl.isNotEmpty
-                                ? NetworkImage(profileImageUrl)
-                                : null,
+                            backgroundImage:
+                                profileImageUrl != null &&
+                                        profileImageUrl.isNotEmpty
+                                    ? NetworkImage(profileImageUrl)
+                                    : null,
                             child: profileImageUrl == null ||
                                     profileImageUrl.isEmpty
                                 ? const Icon(Icons.person)

@@ -105,32 +105,32 @@ class _HomeRankingHeader extends StatelessWidget {
             ),
           ),
         ),
-        InkWell(
-          borderRadius: BorderRadius.circular(999),
-          onTap: onTapMore,
-          child: const Padding(
-            padding: EdgeInsets.fromLTRB(8, 6, 0, 6),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Text(
-                  '전체보기',
-                  style: TextStyle(
-                    color: _secondaryText,
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                SizedBox(width: 1),
-                Icon(
-                  Icons.chevron_right_rounded,
-                  size: 19,
-                  color: _secondaryText,
-                ),
-              ],
-            ),
-          ),
-        ),
+        // InkWell(
+        //   borderRadius: BorderRadius.circular(999),
+        //   onTap: onTapMore,
+        //   child: const Padding(
+        //     padding: EdgeInsets.fromLTRB(8, 6, 0, 6),
+        //     child: Row(
+        //       mainAxisSize: MainAxisSize.min,
+        //       children: [
+        //         Text(
+        //           '전체보기',
+        //           style: TextStyle(
+        //             color: _secondaryText,
+        //             fontSize: 12.5,
+        //             fontWeight: FontWeight.w800,
+        //           ),
+        //         ),
+        //         SizedBox(width: 1),
+        //         Icon(
+        //           Icons.chevron_right_rounded,
+        //           size: 19,
+        //           color: _secondaryText,
+        //         ),
+        //       ],
+        //     ),
+        //   ),
+        // ),
       ],
     );
   }
