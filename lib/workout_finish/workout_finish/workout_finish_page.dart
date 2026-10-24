@@ -224,7 +224,7 @@ class _WorkoutFinishPageState extends ConsumerState<WorkoutFinishPage> {
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       color: _primaryText,
-                      fontSize: 18,
+                      fontSize: 18, 
                       fontWeight: FontWeight.w900,
                       letterSpacing: -0.35,
                     ),

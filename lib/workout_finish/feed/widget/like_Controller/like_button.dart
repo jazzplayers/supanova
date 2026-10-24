@@ -1,6 +1,9 @@
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 import 'package:home_function/auth/model/auth/auth_provider.dart';
+
 import 'like_provider.dart';
 
 class LikeButton extends ConsumerStatefulWidget {
@@ -21,6 +24,20 @@ class _LikeButtonState extends ConsumerState<LikeButton> {
   bool? _optimisticIsLiked;
   int? _optimisticLikesCount;
   bool _isSubmitting = false;
+  bool _waitingForServer = false;
+
+  @override
+  void didUpdateWidget(covariant LikeButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.workoutFinishId != widget.workoutFinishId ||
+        oldWidget.myUid != widget.myUid) {
+      _optimisticIsLiked = null;
+      _optimisticLikesCount = null;
+      _isSubmitting = false;
+      _waitingForServer = false;
+    }
+  }
 
   void _syncFromServer({
     required bool? serverIsLiked,
@@ -28,11 +45,20 @@ class _LikeButtonState extends ConsumerState<LikeButton> {
   }) {
     if (_isSubmitting) return;
 
-    if (serverIsLiked != null && _optimisticIsLiked != serverIsLiked) {
+    if (_waitingForServer) {
+      if (serverIsLiked == _optimisticIsLiked &&
+          serverLikesCount == _optimisticLikesCount) {
+        _waitingForServer = false;
+      } else {
+        return;
+      }
+    }
+
+    if (serverIsLiked != null) {
       _optimisticIsLiked = serverIsLiked;
     }
 
-    if (serverLikesCount != null && _optimisticLikesCount != serverLikesCount) {
+    if (serverLikesCount != null) {
       _optimisticLikesCount = serverLikesCount;
     }
   }
@@ -41,7 +67,7 @@ class _LikeButtonState extends ConsumerState<LikeButton> {
     required bool currentIsLiked,
     required int currentLikesCount,
   }) async {
-    if (_isSubmitting) return;
+    if (_isSubmitting || _waitingForServer) return;
 
     final previousIsLiked = currentIsLiked;
     final previousLikesCount = currentLikesCount;
@@ -51,6 +77,9 @@ class _LikeButtonState extends ConsumerState<LikeButton> {
         ? currentLikesCount + 1
         : (currentLikesCount - 1).clamp(0, 1 << 31);
 
+    final targetWorkoutFinishId = widget.workoutFinishId;
+    final targetMyUid = widget.myUid;
+
     setState(() {
       _isSubmitting = true;
       _optimisticIsLiked = nextIsLiked;
@@ -58,22 +87,36 @@ class _LikeButtonState extends ConsumerState<LikeButton> {
     });
 
     try {
-      final likeController = ref.read(likeControllerProvider.notifier);
+      final likeController = ref.read(
+        likeControllerProvider.notifier,
+      );
 
       if (nextIsLiked) {
-        await likeController.like(widget.workoutFinishId);
+        await likeController.like(targetWorkoutFinishId);
       } else {
-        await likeController.unlike(widget.workoutFinishId);
+        await likeController.unlike(targetWorkoutFinishId);
       }
-
-      ref.invalidate(isLikedProvider(widget.workoutFinishId, widget.myUid));
-      ref.invalidate(likeCountProvider(widget.workoutFinishId));
-      ref.invalidate(likedUserIdsProvider(widget.workoutFinishId));
 
       if (!mounted) return;
 
+      ref.invalidate(
+        isLikedProvider(targetWorkoutFinishId, targetMyUid),
+      );
+      ref.invalidate(
+        likeCountProvider(targetWorkoutFinishId),
+      );
+      ref.invalidate(
+        likedUserIdsProvider(targetWorkoutFinishId),
+      );
+
+      if (widget.workoutFinishId != targetWorkoutFinishId ||
+          widget.myUid != targetMyUid) {
+        return;
+      }
+
       setState(() {
         _isSubmitting = false;
+        _waitingForServer = true;
       });
     } catch (e, st) {
       debugPrint('Error toggling like: $e');
@@ -81,8 +124,14 @@ class _LikeButtonState extends ConsumerState<LikeButton> {
 
       if (!mounted) return;
 
+      if (widget.workoutFinishId != targetWorkoutFinishId ||
+          widget.myUid != targetMyUid) {
+        return;
+      }
+
       setState(() {
         _isSubmitting = false;
+        _waitingForServer = false;
         _optimisticIsLiked = previousIsLiked;
         _optimisticLikesCount = previousLikesCount;
       });
@@ -91,9 +140,25 @@ class _LikeButtonState extends ConsumerState<LikeButton> {
         const SnackBar(
           content: Text('좋아요 처리 중 오류가 발생했습니다.'),
           behavior: SnackBarBehavior.floating,
+          duration: Duration(seconds: 2),
         ),
       );
     }
+  }
+
+  void _showLikedUsers() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      backgroundColor: Colors.transparent,
+      barrierColor: Colors.black54,
+      builder: (context) {
+        return LikedUserListSheet(
+          workoutFinishId: widget.workoutFinishId,
+        );
+      },
+    );
   }
 
   @override
@@ -114,24 +179,30 @@ class _LikeButtonState extends ConsumerState<LikeButton> {
       serverLikesCount: serverLikesCount,
     );
 
-    final isLiked = _optimisticIsLiked ?? serverIsLiked ?? false;
-    final likesCount = _optimisticLikesCount ?? serverLikesCount ?? 0;
+    final isLiked =
+        _optimisticIsLiked ?? serverIsLiked ?? false;
+
+    final likesCount =
+        _optimisticLikesCount ?? serverLikesCount ?? 0;
 
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
+        // 좋아요 버튼
         AnimatedScale(
           scale: isLiked ? 1.08 : 1.0,
           duration: const Duration(milliseconds: 120),
           curve: Curves.easeOutCubic,
           child: IconButton(
             visualDensity: VisualDensity.compact,
-            onPressed: () {
-              _toggleLike(
-                currentIsLiked: isLiked,
-                currentLikesCount: likesCount,
-              );
-            },
+            onPressed: (_isSubmitting || _waitingForServer)
+                ? null
+                : () {
+                    _toggleLike(
+                      currentIsLiked: isLiked,
+                      currentLikesCount: likesCount,
+                    );
+                  },
             icon: AnimatedSwitcher(
               duration: const Duration(milliseconds: 140),
               transitionBuilder: (child, animation) {
@@ -141,32 +212,23 @@ class _LikeButtonState extends ConsumerState<LikeButton> {
                 );
               },
               child: Icon(
-                isLiked ? Icons.favorite : Icons.favorite_border,
+                isLiked
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_border_rounded,
                 key: ValueKey(isLiked),
-                color: isLiked ? Colors.red : Colors.white70,
+                color: isLiked
+                    ? const Color(0xFFFF3B5C)
+                    : Colors.white70,
+                size: 25,
               ),
             ),
           ),
         ),
+
+        // 좋아요 수 클릭 시 목록 표시
         GestureDetector(
           behavior: HitTestBehavior.opaque,
-          onTap: () {
-            showModalBottomSheet(
-              context: context,
-              isScrollControlled: true,
-              backgroundColor: Colors.white,
-              shape: const RoundedRectangleBorder(
-                borderRadius: BorderRadius.vertical(
-                  top: Radius.circular(16),
-                ),
-              ),
-              builder: (_) {
-                return LikedUserListSheet(
-                  workoutFinishId: widget.workoutFinishId,
-                );
-              },
-            );
-          },
+          onTap: _showLikedUsers,
           child: Padding(
             padding: const EdgeInsets.symmetric(
               horizontal: 4,
@@ -191,6 +253,10 @@ class _LikeButtonState extends ConsumerState<LikeButton> {
   }
 }
 
+// ============================================================
+// 좋아요 사용자 목록 바텀시트
+// ============================================================
+
 class LikedUserListSheet extends ConsumerWidget {
   final String workoutFinishId;
 
@@ -199,121 +265,373 @@ class LikedUserListSheet extends ConsumerWidget {
     required this.workoutFinishId,
   });
 
+  static const Color _backgroundColor = Color(0xFF171717);
+  static const Color _secondaryTextColor = Color(0xFF9E9E9E);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final likedUserIdsAsync = ref.watch(
       likedUserIdsProvider(workoutFinishId),
     );
 
-    return SizedBox(
-      height: 400,
-      child: Column(
-        children: [
-          Container(
-            width: 40,
-            height: 4,
-            margin: const EdgeInsets.only(top: 10, bottom: 12),
-            decoration: BoxDecoration(
-              color: Colors.black26,
-              borderRadius: BorderRadius.circular(999),
+    return DraggableScrollableSheet(
+      initialChildSize: 0.55,
+      minChildSize: 0.30,
+      maxChildSize: 0.92,
+      expand: false,
+      builder: (context, scrollController) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: _backgroundColor,
+            borderRadius: BorderRadius.vertical(
+              top: Radius.circular(24),
             ),
           ),
-          const Padding(
-            padding: EdgeInsets.only(bottom: 12),
-            child: Text(
-              '좋아요',
-              style: TextStyle(
-                color: Colors.black87,
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
+          clipBehavior: Clip.antiAlias,
+          child: Column(
+            children: [
+              // 드래그 핸들
+              Center(
+                child: Container(
+                  width: 38,
+                  height: 4,
+                  margin: const EdgeInsets.only(
+                    top: 12,
+                    bottom: 18,
+                  ),
+                  decoration: BoxDecoration(
+                    color: Colors.white30,
+                    borderRadius: BorderRadius.circular(100),
+                  ),
+                ),
               ),
-            ),
-          ),
-          Expanded(
-            child: likedUserIdsAsync.when(
-              data: (userIds) {
-                if (userIds.isEmpty) {
-                  return const Center(
-                    child: Text(
-                      '좋아요 누른 사람이 없습니다.',
+
+              // 상단 제목
+              Padding(
+                padding: const EdgeInsets.only(
+                  left: 20,
+                  right: 12,
+                  bottom: 12,
+                ),
+                child: Row(
+                  children: [
+                    const Text(
+                      '좋아요',
                       style: TextStyle(
-                        color: Colors.black87,
-                        fontSize: 16,
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
                       ),
                     ),
-                  );
-                }
 
-                return ListView.separated(
-                  itemCount: userIds.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final uid = userIds[index];
-                    final userAsync = ref.watch(userAuthDataProvider(uid));
+                    const SizedBox(width: 8),
 
-                    return userAsync.when(
-                      data: (user) {
-                        final displayName =
-                            user?.displayName ?? '알 수 없는 사용자';
-                        final profileImageUrl = user?.profileImageUrl;
-
-                        return ListTile(
-                          leading: CircleAvatar(
-                            backgroundImage:
-                                profileImageUrl != null &&
-                                        profileImageUrl.isNotEmpty
-                                    ? NetworkImage(profileImageUrl)
-                                    : null,
-                            child: profileImageUrl == null ||
-                                    profileImageUrl.isEmpty
-                                ? const Icon(Icons.person)
-                                : null,
-                          ),
-                          title: Text(
-                            displayName,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: Colors.black87,
-                              fontSize: 16,
-                            ),
+                    likedUserIdsAsync.maybeWhen(
+                      data: (userIds) {
+                        return Text(
+                          '${userIds.length}',
+                          style: const TextStyle(
+                            color: _secondaryTextColor,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w500,
                           ),
                         );
                       },
-                      loading: () => const ListTile(
-                        leading: CircleAvatar(
-                          child: Icon(Icons.person),
-                        ),
-                        title: Text('불러오는 중...'),
+                      orElse: () => const SizedBox.shrink(),
+                    ),
+
+                    const Spacer(),
+
+                    IconButton(
+                      onPressed: () {
+                        Navigator.of(context).pop();
+                      },
+                      icon: const Icon(
+                        Icons.close_rounded,
+                        color: Colors.white70,
+                        size: 22,
                       ),
-                      error: (e, st) => const ListTile(
-                        leading: CircleAvatar(
-                          child: Icon(Icons.error_outline),
-                        ),
-                        title: Text('유저 정보를 불러오지 못했습니다.'),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                  ],
+                ),
+              ),
+
+              const Divider(
+                height: 1,
+                thickness: 0.5,
+                color: Color(0xFF333333),
+              ),
+
+              // 사용자 목록
+              Expanded(
+                child: likedUserIdsAsync.when(
+                  data: (userIds) {
+                    if (userIds.isEmpty) {
+                      return ListView(
+                        controller: scrollController,
+                        children: const [
+                          SizedBox(height: 90),
+
+                          Icon(
+                            Icons.favorite_border_rounded,
+                            color: Colors.white30,
+                            size: 52,
+                          ),
+
+                          SizedBox(height: 16),
+
+                          Center(
+                            child: Text(
+                              '아직 좋아요가 없습니다',
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+
+                          SizedBox(height: 8),
+
+                          Center(
+                            child: Text(
+                              '첫 번째 좋아요를 기다리고 있어요.',
+                              style: TextStyle(
+                                color: _secondaryTextColor,
+                                fontSize: 13,
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+
+                    return ListView.builder(
+                      controller: scrollController,
+                      physics: const AlwaysScrollableScrollPhysics(),
+                      padding: const EdgeInsets.symmetric(
+                        vertical: 8,
                       ),
+                      itemCount: userIds.length,
+                      itemBuilder: (context, index) {
+                        final uid = userIds[index];
+
+                        return _LikedUserTile(
+                          key: ValueKey(uid),
+                          uid: uid,
+                        );
+                      },
                     );
                   },
-                );
-              },
-              loading: () => const Center(
-                child: CircularProgressIndicator(),
-              ),
-              error: (e, st) {
-                debugPrint('likedUserIds error: $e');
-                debugPrintStack(stackTrace: st);
 
-                return Center(
-                  child: Text(
-                    '좋아요 목록 에러: $e',
-                    textAlign: TextAlign.center,
+                  loading: () {
+                    return ListView(
+                      controller: scrollController,
+                      children: const [
+                        SizedBox(height: 120),
+                        Center(
+                          child: CircularProgressIndicator(
+                            color: Colors.white,
+                            strokeWidth: 2,
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+
+                  error: (error, stackTrace) {
+                    debugPrint(
+                      'likedUserIds error: $error',
+                    );
+                    debugPrintStack(
+                      stackTrace: stackTrace,
+                    );
+
+                    return ListView(
+                      controller: scrollController,
+                      children: const [
+                        SizedBox(height: 100),
+
+                        Icon(
+                          Icons.error_outline_rounded,
+                          color: Colors.white54,
+                          size: 42,
+                        ),
+
+                        SizedBox(height: 16),
+
+                        Center(
+                          child: Text(
+                            '좋아요 목록을 불러오지 못했습니다.',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 14,
+                            ),
+                          ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+}
+
+// ============================================================
+// 좋아요 사용자 리스트 아이템
+// ============================================================
+
+class _LikedUserTile extends ConsumerWidget {
+  final String uid;
+
+  const _LikedUserTile({
+    super.key,
+    required this.uid,
+  });
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final userAsync = ref.watch(
+      userAuthDataProvider(uid),
+    );
+
+    return userAsync.when(
+      data: (user) {
+        final displayName = user?.displayName ?? '알 수 없는 사용자';
+        final profileImageUrl = user?.profileImageUrl;
+
+        final hasProfileImage =
+            profileImageUrl != null &&
+            profileImageUrl.isNotEmpty;
+
+        return Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: user == null
+                ? null
+                : () {
+                    // 시트가 닫힌 뒤에도 사용할 라우터를 미리 보관합니다.
+                    final router = GoRouter.of(context);
+                    Navigator.of(context).pop();
+                    router.push('/user/${Uri.encodeComponent(uid)}');
+                  },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(
+                horizontal: 20,
+                vertical: 10,
+              ),
+              child: Row(
+                children: [
+                  CircleAvatar(
+                    radius: 23,
+                    backgroundColor: const Color(0xFF303030),
+                    backgroundImage: hasProfileImage
+                        ? NetworkImage(profileImageUrl)
+                        : null,
+                    child: !hasProfileImage
+                        ? const Icon(
+                            Icons.person_rounded,
+                            color: Colors.white54,
+                            size: 25,
+                          )
+                        : null,
                   ),
-                );
-              },
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Text(
+                      displayName,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                  const Icon(
+                    Icons.chevron_right_rounded,
+                    color: Colors.white38,
+                    size: 20,
+                  ),
+                ],
+              ),
             ),
           ),
-        ],
-      ),
+        );
+      },
+
+      loading: () {
+        return const Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 7,
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 23,
+                backgroundColor: Color(0xFF303030),
+                child: Icon(
+                  Icons.person_rounded,
+                  color: Colors.white24,
+                ),
+              ),
+
+              SizedBox(width: 14),
+
+              Text(
+                '불러오는 중...',
+                style: TextStyle(
+                  color: Colors.white38,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+
+      error: (error, stackTrace) {
+        debugPrint(
+          'userAuthDataProvider error ($uid): $error',
+        );
+
+        return const Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: 20,
+            vertical: 12,
+          ),
+          child: Row(
+            children: [
+              CircleAvatar(
+                radius: 23,
+                backgroundColor: Color(0xFF303030),
+                child: Icon(
+                  Icons.error_outline_rounded,
+                  color: Colors.white38,
+                ),
+              ),
+
+              SizedBox(width: 14),
+
+              Text(
+                '사용자 정보를 불러오지 못했습니다.',
+                style: TextStyle(
+                  color: Colors.white54,
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

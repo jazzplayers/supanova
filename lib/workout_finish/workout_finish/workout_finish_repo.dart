@@ -32,6 +32,19 @@ abstract class WorkoutFinishRepo {
     required String workoutFinishId,
   });
 
+  /// 좋아요 수, 댓글 수 등 게시글 변경을 실시간으로 감지한다.
+  Stream<WorkoutFinish?> watchWorkoutFinish({
+    required String workoutFinishId,
+  });
+
+  /// 특정 게시글의 전체 댓글 수를 실시간으로 감지한다.
+  ///
+  /// 댓글 목록 조회 개수와 관계없이 부모 workoutFinish 문서의
+  /// commentsCount 값을 기준으로 반환한다.
+  Stream<int> watchCommentsCount({
+    required String workoutFinishId,
+  });
+
   Future<List<WorkoutFinish>> getFeedWorkoutFinish({
     required String userId,
     String? viewerUid,
@@ -41,8 +54,8 @@ abstract class WorkoutFinishRepo {
   /// 피드 리스트 화면용
   /// ======================
   ///
-  /// 인스타그램처럼 특정 운동 기록을 눌렀을 때,
-  /// 해당 유저의 운동 기록들을 세로 리스트로 연속해서 보여주기 위한 메서드입니다.
+  /// 특정 운동 기록을 눌렀을 때 해당 사용자의 운동 기록을
+  /// 세로 리스트로 연속해서 보여주기 위한 메서드입니다.
   Future<List<WorkoutFinish>> getFeedListWorkoutFinish({
     required String userId,
     String? viewerUid,
@@ -67,8 +80,59 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
 
   static const String _hiddenPendingReview = 'hidden_pending_review';
 
+  CollectionReference<Map<String, dynamic>> get _workoutFinishCollection {
+    return _db.collection('workoutFinish');
+  }
+
   bool _isHiddenByModeration(Map<String, dynamic> data) {
     return data['moderationStatus'] == _hiddenPendingReview;
+  }
+
+  /// 기존 문서에 likesCount 또는 commentsCount가 없거나
+  /// null로 저장돼 있어도 안전하게 0으로 변환한다.
+  int _parseCount(dynamic value) {
+    if (value is num) {
+      return value
+          .toInt()
+          .clamp(0, 1 << 31)
+          .toInt();
+    }
+
+    return 0;
+  }
+
+  WorkoutFinish _workoutFinishFromDocument(
+    DocumentSnapshot<Map<String, dynamic>> doc,
+  ) {
+    final data = doc.data();
+
+    if (data == null) {
+      throw StateError('WorkoutFinish document data is null');
+    }
+
+    return WorkoutFinish.fromJson({
+      ...data,
+      'workoutId': doc.id,
+      'likesCount': _parseCount(data['likesCount']),
+      'commentsCount': _parseCount(data['commentsCount']),
+    });
+  }
+
+  List<String> _cleanImageUrls(List<String> imageUrls) {
+    return imageUrls
+        .map((url) => url.trim())
+        .where((url) => url.isNotEmpty)
+        .toList(growable: false);
+  }
+
+  String? _cleanThumbnailUrl(String? thumbnailUrl) {
+    final value = thumbnailUrl?.trim();
+
+    if (value == null || value.isEmpty) {
+      return null;
+    }
+
+    return value;
   }
 
   Future<Set<String>> _getHiddenContentIds({
@@ -108,7 +172,8 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
     required String ownerUid,
     int? limit,
   }) async {
-    final isOwnerViewingOwnFeed = viewerUid != null && viewerUid == ownerUid;
+    final isOwnerViewingOwnFeed =
+        viewerUid != null && viewerUid == ownerUid;
 
     final hiddenContentIds = viewerUid == null || isOwnerViewingOwnFeed
         ? <String>{}
@@ -125,10 +190,7 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
         continue;
       }
 
-      final workoutFinish = WorkoutFinish.fromJson({
-        ...data,
-        'workoutId': doc.id,
-      });
+      final workoutFinish = _workoutFinishFromDocument(doc);
 
       if (!isOwnerViewingOwnFeed &&
           _isHiddenByViewer(
@@ -154,13 +216,16 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
     required List<String> imageUrls,
     String? thumbnailUrl,
   }) async {
-    final docRef = _db.collection('workoutFinish').doc();
+    final docRef = _workoutFinishCollection.doc();
+
+    final cleanImageUrls = _cleanImageUrls(imageUrls);
+    final cleanThumbnailUrl = _cleanThumbnailUrl(thumbnailUrl);
 
     final data = workoutFinish
         .copyWith(
           workoutId: docRef.id,
-          workoutImagesUrl: imageUrls,
-          workoutThumbnailUrl: thumbnailUrl,
+          workoutImagesUrl: cleanImageUrls,
+          workoutThumbnailUrl: cleanThumbnailUrl,
           likesCount: 0,
           commentsCount: 0,
         )
@@ -174,13 +239,16 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
       ...data,
       'workoutId': docRef.id,
       'userId': workoutFinish.userId,
-      'workoutImagesUrl': imageUrls,
-      'workoutThumbnailUrl': thumbnailUrl,
+      'workoutImagesUrl': cleanImageUrls,
+      'workoutThumbnailUrl': cleanThumbnailUrl,
       'timestamp': FieldValue.serverTimestamp(),
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
+
+      /// 좋아요와 댓글은 새 게시글 생성 시 0부터 시작한다.
       'likesCount': 0,
       'commentsCount': 0,
+
       'reportsCount': 0,
       'moderationStatus': 'normal',
     });
@@ -190,13 +258,13 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
   Future<void> deleteWorkoutFinish({
     required WorkoutFinish workoutFinish,
   }) async {
-    final workoutId = workoutFinish.workoutId;
+    final workoutId = workoutFinish.workoutId?.trim();
 
     if (workoutId == null || workoutId.isEmpty) {
       throw ArgumentError('WorkoutFinish workoutId is invalid');
     }
 
-    await _db.collection('workoutFinish').doc(workoutId).delete();
+    await _workoutFinishCollection.doc(workoutId).delete();
   }
 
   @override
@@ -205,22 +273,27 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
     required List<String> imageUrls,
     String? thumbnailUrl,
   }) async {
-    final workoutId = workoutFinish.workoutId;
+    final workoutId = workoutFinish.workoutId?.trim();
 
     if (workoutId == null || workoutId.isEmpty) {
       throw ArgumentError('WorkoutFinish workoutId is invalid');
     }
 
+    final cleanImageUrls = _cleanImageUrls(imageUrls);
+    final cleanThumbnailUrl = _cleanThumbnailUrl(thumbnailUrl);
+
     final updateData = <String, dynamic>{
-      'workoutImagesUrl': imageUrls,
+      'workoutImagesUrl': cleanImageUrls,
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
-    if (thumbnailUrl != null) {
-      updateData['workoutThumbnailUrl'] = thumbnailUrl;
+    if (cleanThumbnailUrl != null) {
+      updateData['workoutThumbnailUrl'] = cleanThumbnailUrl;
+    } else if (cleanImageUrls.isEmpty) {
+      updateData['workoutThumbnailUrl'] = FieldValue.delete();
     }
 
-    await _db.collection('workoutFinish').doc(workoutId).update(updateData);
+    await _workoutFinishCollection.doc(workoutId).update(updateData);
   }
 
   @override
@@ -228,19 +301,40 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
     required String userId,
   }) async {
     final now = DateTime.now();
-    final start = DateTime(now.year, now.month, now.day);
-    final end = start.add(const Duration(days: 1));
 
-    final snap = await _db
-        .collection('workoutFinish')
-        .where('userId', isEqualTo: userId)
-        .where('timestamp', isGreaterThanOrEqualTo: Timestamp.fromDate(start))
-        .where('timestamp', isLessThan: Timestamp.fromDate(end))
-        .orderBy('timestamp', descending: true)
+    final start = DateTime(
+      now.year,
+      now.month,
+      now.day,
+    );
+
+    final end = start.add(
+      const Duration(days: 1),
+    );
+
+    final snap = await _workoutFinishCollection
+        .where(
+          'userId',
+          isEqualTo: userId,
+        )
+        .where(
+          'timestamp',
+          isGreaterThanOrEqualTo: Timestamp.fromDate(start),
+        )
+        .where(
+          'timestamp',
+          isLessThan: Timestamp.fromDate(end),
+        )
+        .orderBy(
+          'timestamp',
+          descending: true,
+        )
         .limit(1)
         .get();
 
-    if (snap.docs.isEmpty) return null;
+    if (snap.docs.isEmpty) {
+      return null;
+    }
 
     final doc = snap.docs.first;
     final data = doc.data();
@@ -249,10 +343,7 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
       return null;
     }
 
-    return WorkoutFinish.fromJson({
-      ...data,
-      'workoutId': doc.id,
-    });
+    return _workoutFinishFromDocument(doc);
   }
 
   @override
@@ -260,10 +351,15 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
     required String userId,
     String? viewerUid,
   }) async {
-    final snap = await _db
-        .collection('workoutFinish')
-        .where('userId', isEqualTo: userId)
-        .orderBy('timestamp', descending: true)
+    final snap = await _workoutFinishCollection
+        .where(
+          'userId',
+          isEqualTo: userId,
+        )
+        .orderBy(
+          'timestamp',
+          descending: true,
+        )
         .limit(30)
         .get();
 
@@ -279,8 +375,13 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
   Future<WorkoutFinish> workoutFinish({
     required String workoutFinishId,
   }) async {
-    final doc =
-        await _db.collection('workoutFinish').doc(workoutFinishId).get();
+    final id = workoutFinishId.trim();
+
+    if (id.isEmpty) {
+      throw ArgumentError('workoutFinishId is empty');
+    }
+
+    final doc = await _workoutFinishCollection.doc(id).get();
 
     if (!doc.exists || doc.data() == null) {
       throw Exception('WorkoutFinish not found');
@@ -292,10 +393,60 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
       throw Exception('WorkoutFinish hidden by moderation');
     }
 
-    return WorkoutFinish.fromJson({
-      ...data,
-      'workoutId': doc.id,
+    return _workoutFinishFromDocument(doc);
+  }
+
+  @override
+  Stream<WorkoutFinish?> watchWorkoutFinish({
+    required String workoutFinishId,
+  }) {
+    final id = workoutFinishId.trim();
+
+    if (id.isEmpty) {
+      return Stream<WorkoutFinish?>.value(null);
+    }
+
+    return _workoutFinishCollection.doc(id).snapshots().map((doc) {
+      final data = doc.data();
+
+      if (!doc.exists || data == null) {
+        return null;
+      }
+
+      if (_isHiddenByModeration(data)) {
+        return null;
+      }
+
+      return _workoutFinishFromDocument(doc);
     });
+  }
+
+  @override
+  Stream<int> watchCommentsCount({
+    required String workoutFinishId,
+  }) {
+    final id = workoutFinishId.trim();
+
+    if (id.isEmpty) {
+      return Stream<int>.value(0);
+    }
+
+    return _workoutFinishCollection
+        .doc(id)
+        .snapshots()
+        .map((doc) {
+      final data = doc.data();
+
+      if (!doc.exists || data == null) {
+        return 0;
+      }
+
+      if (_isHiddenByModeration(data)) {
+        return 0;
+      }
+
+      return _parseCount(data['commentsCount']);
+    }).distinct();
   }
 
   @override
@@ -318,10 +469,15 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
   }) async {
     final safeLimit = limit <= 0 ? 60 : limit;
 
-    final snap = await _db
-        .collection('workoutFinish')
-        .where('userId', isEqualTo: userId)
-        .orderBy('timestamp', descending: true)
+    final snap = await _workoutFinishCollection
+        .where(
+          'userId',
+          isEqualTo: userId,
+        )
+        .orderBy(
+          'timestamp',
+          descending: true,
+        )
         .limit(safeLimit)
         .get();
 
@@ -341,10 +497,15 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
   }) async {
     final safeLimit = limit <= 0 ? 60 : limit;
 
-    final snap = await _db
-        .collection('workoutFinish')
-        .where('userId', isEqualTo: userId)
-        .orderBy('timestamp', descending: true)
+    final snap = await _workoutFinishCollection
+        .where(
+          'userId',
+          isEqualTo: userId,
+        )
+        .orderBy(
+          'timestamp',
+          descending: true,
+        )
         .limit(safeLimit)
         .get();
 
@@ -360,9 +521,11 @@ class WorkoutFinishRepoImpl implements WorkoutFinishRepo {
   Future<int> getWorkoutCount({
     required String userId,
   }) async {
-    final snap = await _db
-        .collection('workoutFinish')
-        .where('userId', isEqualTo: userId)
+    final snap = await _workoutFinishCollection
+        .where(
+          'userId',
+          isEqualTo: userId,
+        )
         .count()
         .get();
 

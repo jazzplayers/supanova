@@ -6,9 +6,13 @@ import 'package:home_function/workout_finish/workout_finish/workout_finish_repo.
 
 part '../workout_finish_provider.g.dart';
 
+/// ======================
+/// 운동 완료 Repository
+/// ======================
 @riverpod
 WorkoutFinishRepo workoutFinishRepo(Ref ref) {
   final db = ref.watch(firestoreProvider);
+
   return WorkoutFinishRepoImpl(db);
 }
 
@@ -16,12 +20,8 @@ WorkoutFinishRepo workoutFinishRepo(Ref ref) {
 /// 운동 완료 업로드
 /// ======================
 ///
-/// keepAlive를 켜는 이유:
-/// upload 도중 화면이 바뀌거나 provider listener가 사라지면
-/// autoDispose provider가 dispose될 수 있음.
-/// 그 상태에서 await 이후 ref.invalidate를 호출하면
-/// Cannot use the Ref of uploadWorkoutFinishProvider...
-/// 에러가 날 수 있음.
+/// 업로드 도중 화면이 변경되더라도 provider가 dispose되지 않도록
+/// keepAlive를 사용합니다.
 @Riverpod(keepAlive: true)
 Future<void> uploadWorkoutFinish(
   Ref ref, {
@@ -29,7 +29,9 @@ Future<void> uploadWorkoutFinish(
   required List<String> imageUrls,
   String? thumbnailUrl,
 }) async {
-  final workoutFinishRepo = ref.read(workoutFinishRepoProvider);
+  final workoutFinishRepo = ref.read(
+    workoutFinishRepoProvider,
+  );
 
   await workoutFinishRepo.uploadWorkoutFinish(
     workoutFinish: workoutFinish,
@@ -37,7 +39,9 @@ Future<void> uploadWorkoutFinish(
     thumbnailUrl: thumbnailUrl,
   );
 
-  if (!ref.mounted) return;
+  if (!ref.mounted) {
+    return;
+  }
 
   ref.invalidate(todayWorkoutFinishProvider);
   ref.invalidate(workoutCountProvider(workoutFinish.userId));
@@ -55,13 +59,17 @@ Future<void> deleteWorkoutFinish(
   Ref ref, {
   required WorkoutFinish workoutFinish,
 }) async {
-  final workoutFinishRepo = ref.read(workoutFinishRepoProvider);
+  final workoutFinishRepo = ref.read(
+    workoutFinishRepoProvider,
+  );
 
   await workoutFinishRepo.deleteWorkoutFinish(
     workoutFinish: workoutFinish,
   );
 
-  if (!ref.mounted) return;
+  if (!ref.mounted) {
+    return;
+  }
 
   ref.invalidate(todayWorkoutFinishProvider);
   ref.invalidate(workoutCountProvider(workoutFinish.userId));
@@ -70,7 +78,8 @@ Future<void> deleteWorkoutFinish(
   ref.invalidate(feedListWorkoutFinishProvider(workoutFinish.userId));
   ref.invalidate(profileWorkoutGridProvider(workoutFinish.userId));
 
-  final workoutId = workoutFinish.workoutId;
+  final workoutId = workoutFinish.workoutId?.trim();
+
   if (workoutId != null && workoutId.isNotEmpty) {
     ref.invalidate(
       workoutFinishProvider(
@@ -90,7 +99,9 @@ Future<void> updateWorkoutFinishImages(
   required List<String> imageUrls,
   String? thumbnailUrl,
 }) async {
-  final workoutFinishRepo = ref.read(workoutFinishRepoProvider);
+  final workoutFinishRepo = ref.read(
+    workoutFinishRepoProvider,
+  );
 
   await workoutFinishRepo.updateWorkoutFinishImages(
     workoutFinish: workoutFinish,
@@ -98,14 +109,17 @@ Future<void> updateWorkoutFinishImages(
     thumbnailUrl: thumbnailUrl,
   );
 
-  if (!ref.mounted) return;
+  if (!ref.mounted) {
+    return;
+  }
 
   ref.invalidate(workoutFinishListProvider(workoutFinish.userId));
   ref.invalidate(feedWorkoutFinishProvider(workoutFinish.userId));
   ref.invalidate(feedListWorkoutFinishProvider(workoutFinish.userId));
   ref.invalidate(profileWorkoutGridProvider(workoutFinish.userId));
 
-  final workoutId = workoutFinish.workoutId;
+  final workoutId = workoutFinish.workoutId?.trim();
+
   if (workoutId != null && workoutId.isNotEmpty) {
     ref.invalidate(
       workoutFinishProvider(
@@ -119,12 +133,19 @@ Future<void> updateWorkoutFinishImages(
 /// 오늘 운동 기록
 /// ======================
 @riverpod
-Future<WorkoutFinish?> todayWorkoutFinish(Ref ref) async {
+Future<WorkoutFinish?> todayWorkoutFinish(
+  Ref ref,
+) async {
   final auth = ref.read(firebaseAuthProvider);
-  final workoutFinishRepo = ref.watch(workoutFinishRepoProvider);
+  final workoutFinishRepo = ref.watch(
+    workoutFinishRepoProvider,
+  );
 
   final uid = auth.currentUser?.uid;
-  if (uid == null) return null;
+
+  if (uid == null) {
+    return null;
+  }
 
   return workoutFinishRepo.getTodayWorkoutRecord(
     userId: uid,
@@ -140,7 +161,9 @@ Future<List<WorkoutFinish>> workoutFinishList(
   String userId,
 ) async {
   final auth = ref.read(firebaseAuthProvider);
-  final workoutFinishRepo = ref.watch(workoutFinishRepoProvider);
+  final workoutFinishRepo = ref.watch(
+    workoutFinishRepoProvider,
+  );
 
   final viewerUid = auth.currentUser?.uid;
 
@@ -158,26 +181,33 @@ Future<WorkoutFinish?> workoutFinish(
   Ref ref, {
   required String workoutFinishId,
 }) async {
-  final workoutFinishRepo = ref.watch(workoutFinishRepoProvider);
+  final id = workoutFinishId.trim();
+
+  if (id.isEmpty) {
+    return null;
+  }
+
+  final workoutFinishRepo = ref.watch(
+    workoutFinishRepoProvider,
+  );
 
   return workoutFinishRepo.workoutFinish(
-    workoutFinishId: workoutFinishId,
+    workoutFinishId: id,
   );
 }
 
 /// ======================
 /// 기존 피드 운동 기록
 /// ======================
-///
-/// 기존 화면에서 쓰고 있던 provider라서 유지.
-/// 내부 Repo에서는 getFeedListWorkoutFinish를 재사용해도 됨.
 @riverpod
 Future<List<WorkoutFinish>> feedWorkoutFinish(
   Ref ref,
   String userId,
 ) async {
   final auth = ref.read(firebaseAuthProvider);
-  final workoutFinishRepo = ref.watch(workoutFinishRepoProvider);
+  final workoutFinishRepo = ref.watch(
+    workoutFinishRepoProvider,
+  );
 
   final viewerUid = auth.currentUser?.uid;
 
@@ -190,9 +220,6 @@ Future<List<WorkoutFinish>> feedWorkoutFinish(
 /// ======================
 /// 피드 리스트 화면용
 /// ======================
-///
-/// 인스타그램처럼 특정 게시글을 누르면,
-/// 해당 유저의 운동 기록들을 세로 리스트로 연속해서 보여주는 화면에 사용.
 @Riverpod(keepAlive: true)
 Future<List<WorkoutFinish>> feedListWorkoutFinish(
   Ref ref,
@@ -200,7 +227,9 @@ Future<List<WorkoutFinish>> feedListWorkoutFinish(
   int limit = 60,
 }) async {
   final auth = ref.read(firebaseAuthProvider);
-  final workoutFinishRepo = ref.watch(workoutFinishRepoProvider);
+  final workoutFinishRepo = ref.watch(
+    workoutFinishRepoProvider,
+  );
 
   final viewerUid = auth.currentUser?.uid;
 
@@ -220,7 +249,9 @@ Future<List<WorkoutFinish>> profileWorkoutGrid(
   String userId,
 ) async {
   final auth = ref.read(firebaseAuthProvider);
-  final workoutFinishRepo = ref.watch(workoutFinishRepoProvider);
+  final workoutFinishRepo = ref.watch(
+    workoutFinishRepoProvider,
+  );
 
   final viewerUid = auth.currentUser?.uid;
 
@@ -239,7 +270,9 @@ Future<int> workoutCount(
   Ref ref,
   String userId,
 ) async {
-  final workoutFinishRepo = ref.watch(workoutFinishRepoProvider);
+  final workoutFinishRepo = ref.watch(
+    workoutFinishRepoProvider,
+  );
 
   return workoutFinishRepo.getWorkoutCount(
     userId: userId,

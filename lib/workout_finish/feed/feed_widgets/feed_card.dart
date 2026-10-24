@@ -634,6 +634,34 @@ class FeedCard extends ConsumerWidget {
     }
   }
 
+  Future<void> _openComments({
+    required BuildContext context,
+  }) async {
+    final workoutFinishId = workoutFinish.workoutId?.trim();
+
+    if (workoutFinishId == null || workoutFinishId.isEmpty) {
+      showAppSnackBar(
+        context,
+        message: '게시글 정보를 찾을 수 없습니다.',
+        icon: Icons.error_outline_rounded,
+        isError: true,
+      );
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (_) {
+          return FeedCommentPage(
+            workoutFinishId: workoutFinishId,
+            postOwnerUid: postOwnerUid,
+            initialCommentsCount: workoutFinish.commentsCount,
+          );
+        },
+      ),
+    );
+  }
+
   String _formatTime() {
     final createdAt = workoutFinish.createdAt;
 
@@ -816,6 +844,15 @@ class FeedCard extends ConsumerWidget {
                     myUid: myUid,
                     workoutFinishId: workoutFinish.workoutId!,
                   ),
+                const SizedBox(width: 6),
+                _FeedCommentActionButton(
+                  commentsCount: workoutFinish.commentsCount,
+                  onTap: () {
+                    _openComments(
+                      context: context,
+                    );
+                  },
+                ),
                 const Spacer(),
                 Container(
                   padding: const EdgeInsets.symmetric(
@@ -888,3 +925,79 @@ class FeedCard extends ConsumerWidget {
     );
   }
 }
+
+class _FeedCommentActionButton extends StatelessWidget {
+  final int commentsCount;
+  final VoidCallback onTap;
+
+  const _FeedCommentActionButton({
+    required this.commentsCount,
+    required this.onTap,
+  });
+
+  static const Color _primaryText = Color(0xFFFFFFFF);
+  static const Color _secondaryText = Color(0xFF9B9BA1);
+  static const Color _surface = Color(0xFF0B0B0D);
+  static const Color _line = Color(0xFF242428);
+
+  @override
+  Widget build(BuildContext context) {
+    final safeCount = commentsCount < 0 ? 0 : commentsCount;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(999),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(
+            horizontal: 10,
+            vertical: 8,
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.chat_bubble_outline_rounded,
+                color: _primaryText,
+                size: 23,
+              ),
+              if (safeCount > 0) ...[
+                const SizedBox(width: 6),
+                Container(
+                  constraints: const BoxConstraints(
+                    minWidth: 20,
+                    minHeight: 20,
+                  ),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
+                  decoration: BoxDecoration(
+                    color: _surface,
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                      color: _line,
+                      width: 0.8,
+                    ),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    safeCount > 999 ? '999+' : '$safeCount',
+                    style: const TextStyle(
+                      color: _secondaryText,
+                      fontSize: 11.5,
+                      height: 1,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+

@@ -10,16 +10,40 @@ import 'package:home_function/auth/model/auth/auth_provider.dart';
 import 'package:home_function/reports/reports_provider.dart';
 import 'package:home_function/widget/app_snack_bar.dart';
 import 'package:home_function/workout_finish/feed/feed_edit_page.dart';
+import 'package:home_function/workout_finish/feed/widget/comment/feed_comment_page.dart';
 import 'package:home_function/workout_finish/feed/widget/like_Controller/like_button.dart';
 import 'package:home_function/workout_finish/workout_finish/workout_finish.dart';
 import 'package:home_function/workout_finish/workout_finish/workout_finish_provider.dart';
 
-part 'widget/feed_card.dart';
-part 'widget/feed_header.dart';
-part 'widget/feed_hero.dart';
-part 'widget/feed_media.dart';
-part 'widget/feed_route_map.dart';
-part 'widget/feed_stats.dart';
+part 'feed_widgets/feed_card.dart';
+part 'feed_widgets/feed_header.dart';
+part 'feed_widgets/feed_hero.dart';
+part 'feed_widgets/feed_media.dart';
+part 'feed_widgets/feed_route_map.dart';
+part 'feed_widgets/feed_stats.dart';
+
+/// FeedPage에서 특정 게시글의 전체 댓글 수를 실시간으로 감시합니다.
+///
+/// WorkoutFinishRepo에 추가한 watchCommentsCount()를 사용하므로
+/// 댓글 목록 조회 제한과 관계없이 부모 게시글의 commentsCount가 표시됩니다.
+final feedPageCommentsCountProvider =
+    StreamProvider.autoDispose.family<int, String>(
+  (ref, workoutFinishId) {
+    final id = workoutFinishId.trim();
+
+    if (id.isEmpty) {
+      return Stream<int>.value(0);
+    }
+
+    final repo = ref.watch(
+      workoutFinishRepoProvider,
+    );
+
+    return repo.watchCommentsCount(
+      workoutFinishId: id,
+    );
+  },
+);
 
 class FeedPage extends ConsumerStatefulWidget {
   final WorkoutFinish workoutFinish;
@@ -49,9 +73,70 @@ class _FeedPageState extends ConsumerState<FeedPage> {
   }
 
   @override
+  void didUpdateWidget(covariant FeedPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+
+    if (oldWidget.workoutFinish != widget.workoutFinish) {
+      _workoutFinish = widget.workoutFinish;
+    }
+  }
+
+  Future<void> _openComments(
+    WorkoutFinish workoutFinish,
+  ) async {
+    final workoutFinishId =
+        workoutFinish.workoutId?.trim();
+
+    if (workoutFinishId == null ||
+        workoutFinishId.isEmpty) {
+      showAppSnackBar(
+        context,
+        message: '게시글 정보를 찾을 수 없습니다.',
+        icon: Icons.error_outline_rounded,
+        isError: true,
+      );
+      return;
+    }
+
+    await Navigator.of(context).push<void>(
+      MaterialPageRoute(
+        builder: (context) {
+          return FeedCommentPage(
+            workoutFinishId: workoutFinishId,
+            postOwnerUid: workoutFinish.userId,
+            initialCommentsCount:
+                workoutFinish.commentsCount,
+          );
+        },
+      ),
+    );
+  }
+
+  @override
   Widget build(BuildContext context) {
+    final workoutFinishId =
+        _workoutFinish.workoutId?.trim() ?? '';
+
+    final commentsCountAsync = ref.watch(
+      feedPageCommentsCountProvider(
+        workoutFinishId,
+      ),
+    );
+
+    final commentsCount = commentsCountAsync.maybeWhen(
+      data: (value) => value,
+      orElse: () => _workoutFinish.commentsCount,
+    );
+
+    final currentWorkoutFinish =
+        _workoutFinish.copyWith(
+      commentsCount: commentsCount,
+    );
+
     final userAsync = ref.watch(
-      userAuthDataProvider(_workoutFinish.userId),
+      userAuthDataProvider(
+        currentWorkoutFinish.userId,
+      ),
     );
 
     return Scaffold(
@@ -73,6 +158,17 @@ class _FeedPageState extends ConsumerState<FeedPage> {
             letterSpacing: -0.35,
           ),
         ),
+        actions: [
+          _FeedCommentButton(
+            commentsCount: commentsCount,
+            onPressed: () {
+              _openComments(
+                currentWorkoutFinish,
+              );
+            },
+          ),
+          const SizedBox(width: 4),
+        ],
         bottom: const PreferredSize(
           preferredSize: Size.fromHeight(0.7),
           child: Divider(
@@ -101,22 +197,36 @@ class _FeedPageState extends ConsumerState<FeedPage> {
               return SingleChildScrollView(
                 physics: const BouncingScrollPhysics(),
                 padding: EdgeInsets.only(
-                  bottom: MediaQuery.paddingOf(context).bottom,
+                  bottom:
+                      MediaQuery.paddingOf(context).bottom,
                 ),
                 child: ConstrainedBox(
                   constraints: BoxConstraints(
                     minHeight: constraints.maxHeight,
                   ),
                   child: FeedCard(
-                    availableHeight: constraints.maxHeight,
-                    postOwnerUid: _workoutFinish.userId,
+                    availableHeight:
+                        constraints.maxHeight,
+                    postOwnerUid:
+                        currentWorkoutFinish.userId,
                     displayName: user.displayName,
                     email: user.email,
-                    userProfileUrl: user.profileImageUrl,
-                    workoutFinish: _workoutFinish,
-                    onUpdated: (updatedWorkoutFinish) {
+                    userProfileUrl:
+                        user.profileImageUrl,
+                    workoutFinish:
+                        currentWorkoutFinish,
+                    onUpdated:
+                        (updatedWorkoutFinish) {
+                      if (!mounted) {
+                        return;
+                      }
+
                       setState(() {
-                        _workoutFinish = updatedWorkoutFinish;
+                        _workoutFinish =
+                            updatedWorkoutFinish.copyWith(
+                          commentsCount:
+                              commentsCount,
+                        );
                       });
                     },
                   ),
@@ -131,19 +241,99 @@ class _FeedPageState extends ConsumerState<FeedPage> {
             strokeWidth: 2,
           ),
         ),
-        error: (error, stackTrace) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(
-              '유저 정보 로드 실패: $error',
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: _secondaryText,
-                fontWeight: FontWeight.w600,
+        error: (error, stackTrace) {
+          debugPrint(
+            'FeedPage user load error: $error',
+          );
+
+          debugPrintStack(
+            stackTrace: stackTrace,
+          );
+
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Text(
+                '유저 정보 로드 실패: $error',
+                textAlign: TextAlign.center,
+                style: const TextStyle(
+                  color: _secondaryText,
+                  fontWeight: FontWeight.w600,
+                ),
               ),
             ),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FeedCommentButton extends StatelessWidget {
+  final int commentsCount;
+  final VoidCallback onPressed;
+
+  const _FeedCommentButton({
+    required this.commentsCount,
+    required this.onPressed,
+  });
+
+  static const Color _backgroundColor = Color(0xFF000000);
+  static const Color _primaryTextColor = Color(0xFFFFFFFF);
+  static const Color _accentColor = Color(0xFF5DADEC);
+
+  @override
+  Widget build(BuildContext context) {
+    final countText = commentsCount > 999
+        ? '999+'
+        : commentsCount.toString();
+
+    return IconButton(
+      tooltip: '댓글 보기',
+      onPressed: onPressed,
+      icon: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          const Icon(
+            Icons.chat_bubble_outline_rounded,
+            color: _primaryTextColor,
+            size: 23,
           ),
-        ),
+          if (commentsCount > 0)
+            Positioned(
+              top: -8,
+              right: -11,
+              child: Container(
+                constraints: const BoxConstraints(
+                  minWidth: 18,
+                  minHeight: 18,
+                ),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 5,
+                  vertical: 2,
+                ),
+                decoration: BoxDecoration(
+                  color: _accentColor,
+                  borderRadius:
+                      BorderRadius.circular(999),
+                  border: Border.all(
+                    color: _backgroundColor,
+                    width: 1.5,
+                  ),
+                ),
+                child: Text(
+                  countText,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: _primaryTextColor,
+                    fontSize: 9.5,
+                    height: 1,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -156,5 +346,12 @@ bool _isValidNetworkImageUrl(String? url) {
     return false;
   }
 
-  return value.startsWith('http://') || value.startsWith('https://');
+  final uri = Uri.tryParse(value);
+
+  if (uri == null || uri.host.isEmpty) {
+    return false;
+  }
+
+  return uri.scheme == 'http' ||
+      uri.scheme == 'https';
 }

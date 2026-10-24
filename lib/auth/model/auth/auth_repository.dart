@@ -1,9 +1,12 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
+
+import 'package:home_function/core/notification/notification_service.dart';
 
 import 'auth.dart';
 
@@ -704,6 +707,21 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
   @override
   Future<void> userSignOut() async {
     try {
+      final currentUser = _auth.currentUser;
+
+      // Firebase Auth 로그아웃 전에 현재 기기의 FCM 등록을 제거해야 합니다.
+      // 로그아웃 후에는 Firestore Rules 때문에 자신의 fcmDevices 문서를
+      // 삭제할 수 없으므로 반드시 이 순서를 유지합니다.
+      if (currentUser != null) {
+        try {
+          await NotificationService.unregisterBeforeSignOut(
+            uid: currentUser.uid,
+          );
+        } catch (_) {
+          // FCM 정리 실패 때문에 로그아웃 자체를 막지는 않습니다.
+        }
+      }
+
       try {
         await GoogleSignIn.instance.signOut();
       } catch (_) {}
@@ -727,6 +745,15 @@ class UserAuthRepositoryImpl implements UserAuthRepository {
         } catch (_) {
           // 앱 시작 시 필드 보정 실패가 auth stream을 깨지 않게 둠.
         }
+
+        // 이메일·Google·Apple 로그인과 앱 재실행을 한 곳에서 처리합니다.
+        // 토큰 등록 때문에 인증 스트림과 화면 전환이 지연되지 않도록
+        // 기다리지 않고 실행합니다. NotificationService 내부에서 오류를 처리합니다.
+        unawaited(
+          NotificationService.registerForUser(
+            uid: user.uid,
+          ),
+        );
       }
 
       return user;
